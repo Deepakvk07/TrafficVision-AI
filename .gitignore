@@ -1,0 +1,12 @@
+# Python & Jupyter
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.vscode/
+
+# Model weights (auto-downloaded by YOLO)
+*.pt
+
+# Outputs
+traffic_annotated.mp4
+*.csv
