@@ -20,7 +20,7 @@
 [✨ Key Superpowers](#-key-superpowers) •
 [🧠 System Architecture](#-system-architecture) •
 [📊 Telemetry & Analytics](#-telemetry--analytics) •
-[🎓 B.Tech Viva Q&A](#-viva-voce-defense-guide)
+[🔬 Benchmarks](#-benchmark-comparison-matrix)
 
 ---
 
@@ -115,30 +115,6 @@ TrafficVision AI abandons ugly default overlapping boxes in favor of a sleek, mi
 | **YOLOv8-Small (yolov8s)** | 11.2 | 0.924 | 0.910 | 0.887 | Balanced Accuracy & Speed |
 | **YOLOv8-Medium (yolov8m)** | 25.9 | 0.941 | 0.932 | 0.905 | High-End GPU Cluster |
 
----
-
-## 🎓 Viva Voce Defense Guide
-
-> [!TIP]
-> **Key answers for project presentations and external examiner viva:**
-
-<details>
-<summary><b>Q1: Why choose YOLOv8 over older models like YOLOv5 or Faster R-CNN?</b></summary>
-<br>
-YOLOv8 features an <b>anchor-free split head</b> that independently computes objectness, classification, and regression. This removes the manual anchor-box hyperparameter tuning required in YOLOv5, drastically speeds up edge inference, and significantly improves detection recall on multi-scale vehicle silhouettes (distant small cars vs. massive foreground semi-trucks).
-</details>
-
-<details>
-<summary><b>Q2: How does ByteTrack eliminate vehicle ID switches during bumper-to-bumper occlusion?</b></summary>
-<br>
-Traditional trackers discard low-confidence detections. <b>ByteTrack</b> uses a revolutionary two-stage association pipeline: it first matches high-confidence detections using Kalman-filter spatial proximity, and then associates remaining low-confidence boxes with existing tracklets. This preserves persistent vehicle IDs even when a car is temporarily hidden behind a bus or truck.
-</details>
-
-<details>
-<summary><b>Q3: Why is high-resolution inference (imgsz=1280) essential for highway surveillance?</b></summary>
-<br>
-Standard YOLO models default to 640×640. In a 1080p surveillance perspective, distant vehicles in the background occupy only ~35×20 pixels. Downsampling them to 640p crushes them to under 10 pixels, causing detectors to miss the entire background traffic flow. Running at <b>imgsz=1280</b> retains critical edge contours, boosting active detections from 25 to <b>55+ vehicles per frame</b>.
-</details>
 
 ---
 
