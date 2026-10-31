@@ -1220,7 +1220,7 @@
               <!-- Video & Canvas Elements -->
               <video id="traffic-video" autoplay loop muted playsinline src="188613-883402208.mp4"></video>
               <img id="traffic-live-img" alt="Live CCTV Frame">
-              <iframe id="traffic-iframe" style="display:none;" allow="autoplay"></iframe>
+              <iframe id="traffic-iframe" style="display:none;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
               <canvas id="ai-inference-canvas"></canvas>
 
               <!-- Clean Floating HUD Badges -->
@@ -1503,9 +1503,30 @@
         <button class="modal-close-btn" onclick="closeCustomStreamModal()">&times;</button>
       </div>
       <p style="font-size:0.8rem; color:var(--text-muted);">
-        Enter a public traffic camera URL (.mp4, .m3u8 HLS, or YouTube live stream) to run AI inference over the broadcast.
+        Enter any YouTube traffic video/live stream, direct .mp4, or CCTV feed. Supports all YouTube formats (<code>youtube.com/watch</code>, <code>youtu.be</code>, <code>youtube.com/live</code>, or 11-char ID).
       </p>
-      <input type="text" class="modal-input-field" id="customStreamUrlInput" placeholder="https://example.com/traffic-camera.mp4 or YouTube URL">
+      <input type="text" class="modal-input-field" id="customStreamUrlInput" placeholder="Paste YouTube link (e.g. https://youtu.be/... or https://youtube.com/watch?v=...)">
+      
+      <!-- Quick Verified Presets -->
+      <div style="margin-bottom:1.25rem;">
+        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.4rem;">Quick Verified Traffic Streams:</div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button type="button" class="tool-btn" style="font-size:0.75rem; padding:0.3rem 0.6rem;" onclick="setPresetStream('https://www.youtube.com/watch?v=1EiC9bvVGnk')">
+            <i class="fa-brands fa-youtube" style="color:#ff3333"></i> Live Stream 1
+          </button>
+          <button type="button" class="tool-btn" style="font-size:0.75rem; padding:0.3rem 0.6rem;" onclick="setPresetStream('https://www.youtube.com/watch?v=6dp-bvQ7RWo')">
+            <i class="fa-brands fa-youtube" style="color:#ff3333"></i> Live Stream 2
+          </button>
+          <button type="button" class="tool-btn" style="font-size:0.75rem; padding:0.3rem 0.6rem;" onclick="setPresetStream('188613-883402208.mp4')">
+            <i class="fa-solid fa-file-video" style="color:var(--primary)"></i> Local 1080p Traffic
+          </button>
+        </div>
+      </div>
+
+      <div style="font-size:0.72rem; color:var(--text-subtle); margin-bottom:1.25rem; line-height:1.4;">
+        <i class="fa-solid fa-circle-info" style="color:var(--primary)"></i> <strong>Why "refused to connect" happens:</strong> Some YouTube creators turn off "Allow embedding on third-party websites". When embedding is allowed, our engine auto-converts your link into an unblocked player.
+      </div>
+
       <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
         <button class="tool-btn" onclick="closeCustomStreamModal()">Cancel</button>
         <button class="btn-primary-action" onclick="applyCustomStreamUrl()"><i class="fa-solid fa-bolt"></i> Load Stream</button>
@@ -2093,6 +2114,21 @@
       if (e.target.id === 'customStreamModal') closeCustomStreamModal();
     }
 
+    function extractYouTubeVideoId(url) {
+      if (!url) return null;
+      url = url.trim();
+      // Match watch?v=, youtu.be/, /live/, /embed/, /shorts/
+      const pattern = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|live|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+      const m = url.match(pattern);
+      if (m && m[1]) return m[1];
+      if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
+      return null;
+    }
+
+    function setPresetStream(url) {
+      document.getElementById('customStreamUrlInput').value = url;
+    }
+
     function applyCustomStreamUrl() {
       const url = document.getElementById('customStreamUrlInput').value.trim();
       if (!url) return;
@@ -2102,29 +2138,48 @@
       const img = document.getElementById('traffic-live-img');
       const iframe = document.getElementById('traffic-iframe');
 
-      if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      const ytId = extractYouTubeVideoId(url);
+
+      if (ytId) {
         isExternalStream = true;
-        let embed = url;
-        if (url.includes('watch?v=')) {
-          const vid = url.split('watch?v=')[1].split('&')[0];
-          embed = `https://www.youtube.com/embed/${vid}?autoplay=1&mute=1&controls=0&loop=1`;
-        }
+        v.pause();
         v.style.display = 'none';
         if (img) img.style.display = 'none';
+
+        // Privacy-enhanced official embed domain with proper parameters
+        const embedUrl = `https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&mute=1&controls=1&rel=0&playsinline=1&enablejsapi=1`;
+        iframe.src = embedUrl;
         iframe.style.display = 'block';
-        iframe.src = embed;
-        document.getElementById('hudCorridorTitle').textContent = 'External YouTube Stream';
+
+        document.getElementById('btnSourceSample').classList.remove('active');
+        document.getElementById('hudCorridorTitle').textContent = `YouTube Stream (${ytId})`;
+        document.getElementById('hudDetectionPill').className = 'hud-pill status-amber';
+        document.getElementById('hudDetectionText').textContent = 'External YouTube Stream Active';
+        showToast(`Connected YouTube Stream: ID ${ytId}`);
+      } else if (url.match(/\.(jpeg|jpg|png|webp)($|\?)/i)) {
+        isExternalStream = false;
+        v.pause();
+        v.style.display = 'none';
+        iframe.style.display = 'none';
+        iframe.src = '';
+        if (img) {
+          img.style.display = 'block';
+          img.src = url;
+        }
+        document.getElementById('hudCorridorTitle').textContent = `IP Camera: ${url.substring(0, 30)}...`;
+        showToast('Connected IP Camera Snapshot');
       } else {
+        // Direct MP4 / WebM stream
         isExternalStream = false;
         iframe.style.display = 'none';
+        iframe.src = '';
         if (img) img.style.display = 'none';
         v.style.display = 'block';
         v.src = url;
         v.play().catch(e => console.log('Autoplay handled', e));
-        document.getElementById('hudCorridorTitle').textContent = `Custom Stream: ${url.substring(0, 30)}...`;
+        document.getElementById('hudCorridorTitle').textContent = `Custom Video Stream: ${url.substring(0, 30)}...`;
+        showToast('Connected Custom Video Feed');
       }
-
-      showToast(`Connected custom video feed: ${url.substring(0, 35)}...`);
     }
 
     /* --------------------------------------------------------------------------
