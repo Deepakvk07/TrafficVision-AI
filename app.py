@@ -10,6 +10,7 @@ import urllib.parse
 import json
 import time
 import os
+import re
 import sys
 import base64
 import numpy as np
@@ -418,6 +419,76 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps(result_payload).encode('utf-8'))
                 return
+
+            # -------------------------------------------------------------
+            # Endpoint: POST /api/prepare-youtube
+            # Streams/caches YouTube videos as same-origin MP4
+            # enabling full HTML5 Canvas + YOLOv8 real-time AI bounding box detection!
+            # -------------------------------------------------------------
+            if parsed_url.path == '/api/prepare-youtube':
+                content_len = int(self.headers.get('Content-Length', 0))
+                body_bytes = self.rfile.read(content_len) if content_len > 0 else b'{}'
+                try:
+                    payload = json.loads(body_bytes.decode('utf-8'))
+                except Exception:
+                    payload = {}
+
+                raw_url = payload.get('url', '').strip()
+                if not raw_url:
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'error': 'No URL provided'}).encode('utf-8'))
+                    return
+
+                # Extract 11-char video ID
+                m = re.search(r'(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|live|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})', raw_url)
+                vid = m.group(1) if m else raw_url
+
+                cache_dir = os.path.join(DIRECTORY, 'youtube_cache')
+                os.makedirs(cache_dir, exist_ok=True)
+                out_file = os.path.join(cache_dir, f'{vid}.mp4')
+
+                if os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        'status': 'ready',
+                        'video_url': f'/youtube_cache/{vid}.mp4',
+                        'video_id': vid,
+                        'title': f'YouTube Stream ({vid})'
+                    }).encode('utf-8'))
+                    return
+
+                try:
+                    import yt_dlp
+                    ydl_opts = {
+                        'format': '134/135/136/133/bestvideo[ext=mp4]/best',
+                        'outtmpl': out_file,
+                        'quiet': True,
+                        'no_warnings': True
+                    }
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(f'https://www.youtube.com/watch?v={vid}', download=True)
+                        title = info.get('title', f'YouTube Stream ({vid})')
+
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        'status': 'ready',
+                        'video_url': f'/youtube_cache/{vid}.mp4',
+                        'video_id': vid,
+                        'title': title
+                    }).encode('utf-8'))
+                    return
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'error': str(e), 'video_id': vid}).encode('utf-8'))
+                    return
 
             self.send_response(404)
             self.end_headers()

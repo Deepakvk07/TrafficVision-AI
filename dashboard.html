@@ -2129,7 +2129,7 @@
       document.getElementById('customStreamUrlInput').value = url;
     }
 
-    function applyCustomStreamUrl() {
+    async function applyCustomStreamUrl() {
       const url = document.getElementById('customStreamUrlInput').value.trim();
       if (!url) return;
       closeCustomStreamModal();
@@ -2141,17 +2141,54 @@
       const ytId = extractYouTubeVideoId(url);
 
       if (ytId) {
+        document.getElementById('btnSourceSample').classList.remove('active');
+        document.getElementById('hudCorridorTitle').textContent = `Processing YouTube (${ytId})...`;
+        document.getElementById('hudDetectionPill').className = 'hud-pill status-amber';
+        document.getElementById('hudDetectionText').textContent = 'Preparing AI Vision Stream...';
+        showToast(`Extracting YouTube stream (${ytId}) for real-time AI vehicle detection...`);
+
+        try {
+          const prepResp = await fetch('/api/prepare-youtube', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url })
+          });
+
+          if (prepResp.ok) {
+            const prepData = await prepResp.json();
+            if (prepData.video_url) {
+              isExternalStream = false;
+              iframe.style.display = 'none';
+              iframe.src = '';
+              if (img) img.style.display = 'none';
+
+              v.style.display = 'block';
+              v.src = prepData.video_url;
+              v.play().catch(e => console.log('Autoplay handled', e));
+
+              resetInOutCounters();
+              document.getElementById('hudCorridorTitle').textContent = `YouTube &bull; ${prepData.title || ytId}`;
+              document.getElementById('specCorridorName').textContent = prepData.title || ytId;
+              document.getElementById('specRoute').textContent = 'YouTube Video Stream (AI Tracking Active)';
+              document.getElementById('specRegionTag').textContent = 'YOUTUBE';
+              showToast('YouTube stream ready! Real-time YOLOv8 neural detection active.');
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('Backend YouTube extraction failed, using iframe', err);
+        }
+
+        // Fallback to iframe if download failed
         isExternalStream = true;
         v.pause();
         v.style.display = 'none';
         if (img) img.style.display = 'none';
 
-        // Privacy-enhanced official embed domain with proper parameters
         const embedUrl = `https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&mute=1&controls=1&rel=0&playsinline=1&enablejsapi=1`;
         iframe.src = embedUrl;
         iframe.style.display = 'block';
 
-        document.getElementById('btnSourceSample').classList.remove('active');
         document.getElementById('hudCorridorTitle').textContent = `YouTube Stream (${ytId})`;
         document.getElementById('hudDetectionPill').className = 'hud-pill status-amber';
         document.getElementById('hudDetectionText').textContent = 'External YouTube Stream Active';
