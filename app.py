@@ -34,7 +34,12 @@ yolo_model = YOLO(MODEL_PATH)
 # Global Cumulative Vehicle Tracking Session across Video Frames
 SESSION_TRACKER = {
     'seen_ids': set(),
-    'cumulative': {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
+    'cumulative': {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0},
+    'prev_positions': {},      # track_id -> (cx, cy)
+    'counted_in': set(),       # track_ids counted crossing down (inflow)
+    'counted_out': set(),      # track_ids counted crossing up (outflow)
+    'in_count': 0,
+    'out_count': 0
 }
 
 
@@ -379,6 +384,11 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                 if payload.get('reset', False):
                     SESSION_TRACKER['seen_ids'].clear()
                     SESSION_TRACKER['cumulative'] = {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
+                    SESSION_TRACKER['prev_positions'].clear()
+                    SESSION_TRACKER['counted_in'].clear()
+                    SESSION_TRACKER['counted_out'].clear()
+                    SESSION_TRACKER['in_count'] = 0
+                    SESSION_TRACKER['out_count'] = 0
 
                 conf_thresh = float(payload.get('conf', 0.15))
                 
@@ -390,6 +400,9 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                 class_counts = {"car": 0, "motorcycle": 0, "bus": 0, "truck": 0}
                 boxes = res[0].boxes
                 ids_list = boxes.id.tolist() if (boxes and boxes.id is not None) else []
+
+                gate_ratio = float(payload.get('gate_y', 0.45))
+                gate_line_y = h * gate_ratio
 
                 for idx, box in enumerate(boxes):
                     xyxy = box.xyxy[0].tolist()
@@ -406,6 +419,21 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                         SESSION_TRACKER['seen_ids'].add(track_id)
                         if cls_name in SESSION_TRACKER['cumulative']:
                             SESSION_TRACKER['cumulative'][cls_name] += 1
+
+                    curr_x = (xyxy[0] + xyxy[2]) / 2.0
+                    curr_y = (xyxy[1] + xyxy[3]) / 2.0
+
+                    # Spatial virtual gate line crossing tracking
+                    if track_id in SESSION_TRACKER['prev_positions']:
+                        prev_x, prev_y = SESSION_TRACKER['prev_positions'][track_id]
+                        if prev_y < gate_line_y and curr_y >= gate_line_y and track_id not in SESSION_TRACKER['counted_in']:
+                            SESSION_TRACKER['in_count'] += 1
+                            SESSION_TRACKER['counted_in'].add(track_id)
+                        elif prev_y > gate_line_y and curr_y <= gate_line_y and track_id not in SESSION_TRACKER['counted_out']:
+                            SESSION_TRACKER['out_count'] += 1
+                            SESSION_TRACKER['counted_out'].add(track_id)
+
+                    SESSION_TRACKER['prev_positions'][track_id] = (curr_x, curr_y)
 
                     detections.append({
                         'id': track_id,
@@ -432,6 +460,8 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                     'class_counts': class_counts,
                     'cumulative_counts': dict(SESSION_TRACKER['cumulative']),
                     'total_cumulative': total_cum,
+                    'in_count': SESSION_TRACKER['in_count'],
+                    'out_count': SESSION_TRACKER['out_count'],
                     'congestion': congestion,
                     'frame_width': w,
                     'frame_height': h,
@@ -453,10 +483,15 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
             if parsed_url.path == '/api/reset-tracking':
                 SESSION_TRACKER['seen_ids'].clear()
                 SESSION_TRACKER['cumulative'] = {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
+                SESSION_TRACKER['prev_positions'].clear()
+                SESSION_TRACKER['counted_in'].clear()
+                SESSION_TRACKER['counted_out'].clear()
+                SESSION_TRACKER['in_count'] = 0
+                SESSION_TRACKER['out_count'] = 0
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({'status': 'reset', 'cumulative': SESSION_TRACKER['cumulative']}).encode('utf-8'))
+                self.wfile.write(json.dumps({'status': 'reset', 'in_count': 0, 'out_count': 0, 'cumulative': SESSION_TRACKER['cumulative']}).encode('utf-8'))
                 return
 
             if parsed_url.path == '/api/prepare-youtube':
