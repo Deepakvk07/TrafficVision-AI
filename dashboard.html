@@ -508,53 +508,6 @@
       color: #fff;
     }
 
-    /* Video Drag & Drop Upload Zone */
-    .video-dropzone-box {
-      margin-top: 1.25rem;
-      background: rgba(19, 27, 46, 0.6);
-      border: 2px dashed rgba(0, 229, 255, 0.35);
-      border-radius: 12px;
-      padding: 1.75rem 2rem;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      position: relative;
-    }
-
-    .video-dropzone-box:hover, .video-dropzone-box.dragover {
-      background: rgba(0, 229, 255, 0.08);
-      border-color: var(--primary);
-      box-shadow: 0 0 25px rgba(0, 229, 255, 0.15);
-    }
-
-    .dropzone-icon {
-      font-size: 2rem;
-      color: var(--primary);
-      margin-bottom: 0.5rem;
-    }
-
-    .dropzone-title {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #fff;
-    }
-
-    .dropzone-sub {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      margin-top: 0.25rem;
-    }
-
-    .dropzone-sub span {
-      color: var(--primary);
-      text-decoration: underline;
-    }
-
-    .dropzone-disclaimer {
-      font-size: 0.72rem;
-      color: var(--text-subtle);
-      margin-top: 0.5rem;
-    }
 
     /* --------------------------------------------------------------------------
        RIGHT STAGE: DETAILS & TELEMETRY HUB
@@ -1258,7 +1211,7 @@
         <!-- Left: Video Viewport Stage -->
         <div class="viewport-stage-column">
           <div class="viewport-card-container">
-            <div class="video-viewport-wrapper" id="videoViewport">
+            <div class="video-viewport-wrapper" id="videoViewport" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleFileDrop(event)">
               <!-- Video & Canvas Elements -->
               <video id="traffic-video" autoplay loop muted playsinline src="188613-883402208.mp4"></video>
               <img id="traffic-live-img" alt="Live CCTV Frame">
@@ -1319,17 +1272,7 @@
             </div>
           </div>
 
-          <!-- Drag & Drop Zone -->
-          <div class="video-dropzone-box" onclick="triggerVideoUpload()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleFileDrop(event)">
-            <div class="dropzone-icon">
-              <i class="fa-solid fa-file-video"></i>
-            </div>
-            <div class="dropzone-title">Drop your traffic or test video here, or <span>browse files</span></div>
-            <div class="dropzone-sub">Supports .mp4, .webm, .mov &bull; Edge Neural Inference runs locally on frames</div>
-            <div class="dropzone-disclaimer">
-              <i class="fa-solid fa-shield-halved"></i> Non-traffic footage (cartoons, indoor) will strictly output 0 detections with zero false bounding boxes.
-            </div>
-          </div>
+
         </div>
 
         <!-- Right: Current Details & Telemetry Cards -->
@@ -1453,63 +1396,7 @@
             </div>
           </div>
 
-          <!-- Card 3: Active Corridor Details -->
-          <div class="tele-card">
-            <div class="card-header-row">
-              <span class="card-title"><i class="fa-solid fa-location-dot"></i> Corridor Specifications</span>
-              <span class="india-flag-pill" id="specRegionTag">DELHI NCR</span>
-            </div>
 
-            <div class="spec-info-list">
-              <div class="spec-item">
-                <span class="spec-label">Corridor Name</span>
-                <span class="spec-value" id="specCorridorName">Yamuna Expressway</span>
-              </div>
-              <div class="spec-item">
-                <span class="spec-label">Route Corridor</span>
-                <span class="spec-value" id="specRoute">Greater Noida - Agra (165 km)</span>
-              </div>
-              <div class="spec-item">
-                <span class="spec-label">Lane Capacity</span>
-                <span class="spec-value" id="specLanes">6-Lane Access Controlled</span>
-              </div>
-              <div class="spec-item">
-                <span class="spec-label">Speed Limit</span>
-                <span class="spec-value" id="specSpeedLimit">100 km/h</span>
-              </div>
-              <div class="spec-item">
-                <span class="spec-label">Vision Optics</span>
-                <span class="spec-value">1080p Optical Sensor</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Card 4: Neural Engine Diagnostics -->
-          <div class="tele-card">
-            <div class="card-header-row">
-              <span class="card-title"><i class="fa-solid fa-brain"></i> Neural Diagnostics</span>
-              <span style="font-family:var(--font-mono); font-size:0.75rem; color:var(--green)">PYTORCH</span>
-            </div>
-
-            <div class="spec-info-list">
-              <div class="spec-item">
-                <span class="spec-label">Architecture</span>
-                <span class="spec-value">Ultralytics YOLOv8-Nano</span>
-              </div>
-              <div class="spec-item">
-                <span class="spec-label">Inference Latency</span>
-                <span class="spec-value" id="specLatency">52.3 ms</span>
-              </div>
-              <div class="spec-item">
-                <span class="spec-label">Confidence Threshold</span>
-                <span class="spec-value">conf &gt;= 0.25</span>
-              </div>
-              <div class="spec-item">
-                <span class="spec-label">Counting Algorithm</span>
-                <span class="spec-value">Virtual Gate Line (Y = 0.28)</span>
-              </div>
-            </div>
-          </div>
 
         </div>
       </div>
@@ -1659,30 +1546,76 @@
       showToast(`Gate auto-aligned to traffic flow (Y = ${Math.round(gateYRatio * 100)}%)`);
     }
 
-    function resetInOutCounters() {
+    function safeSetText(id, text) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    }
+
+    function safeSetStyle(id, prop, val) {
+      const el = document.getElementById(id);
+      if (el) el.style[prop] = val;
+    }
+
+    // Comprehensive Counter & Tracking Reset when switching any video source (Sample, Upload, YouTube)
+    function resetAllTelemetryAndTracking(showToastMsg = true) {
+      // 1. Reset client tracking state & clear active detections
       inCount = 0;
       outCount = 0;
       prevVehiclePositions = {};
       countedInGateIds.clear();
       countedOutGateIds.clear();
+      realYoloDetections = [];
+      userHasManuallyMovedGate = false;
 
-      document.getElementById('teleInflowCount').textContent = '0';
-      document.getElementById('teleOutflowCount').textContent = '0';
+      // 2. Clear canvas overlay immediately
+      const canvas = document.getElementById('ai-inference-canvas');
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
 
-      // Reset category tiles
-      document.getElementById('tileTotalCars').textContent = '0';
-      document.getElementById('tileTotalMotos').textContent = '0';
-      document.getElementById('tileTotalBuses').textContent = '0';
-      document.getElementById('tileTotalTrucks').textContent = '0';
-      document.getElementById('allTimeTotalPill').textContent = 'TOTAL DETECTED: 0';
+      // 3. Reset Live Telemetry UI values
+      safeSetText('teleVehicleCount', '0');
+      safeSetText('teleInflowCount', '0');
+      safeSetText('teleOutflowCount', '0');
+      safeSetText('teleSpeedValue', '0 km/h');
 
-      document.getElementById('countCars').textContent = 'Live: 0 • Total: 0';
-      document.getElementById('countMotos').textContent = 'Live: 0 • Total: 0';
-      document.getElementById('countBuses').textContent = 'Live: 0 • Total: 0';
-      document.getElementById('countTrucks').textContent = 'Live: 0 • Total: 0';
+      const b = document.getElementById('teleCongestionBadge');
+      if (b) {
+        b.textContent = 'Free Flow (0 Vehicles)';
+        b.className = 'congestion-badge-pill congestion-free';
+      }
+      safeSetStyle('teleCongestionBar', 'width', '0%');
 
+      // 4. Reset All Vehicle Category Totals & Live Progress Bars
+      safeSetText('tileTotalCars', '0');
+      safeSetText('tileTotalMotos', '0');
+      safeSetText('tileTotalBuses', '0');
+      safeSetText('tileTotalTrucks', '0');
+      safeSetText('allTimeTotalPill', 'TOTAL DETECTED: 0');
+
+      safeSetText('countCars', 'Live: 0 • Total: 0');
+      safeSetStyle('barCars', 'width', '0%');
+
+      safeSetText('countMotos', 'Live: 0 • Total: 0');
+      safeSetStyle('barMotos', 'width', '0%');
+
+      safeSetText('countBuses', 'Live: 0 • Total: 0');
+      safeSetStyle('barBuses', 'width', '0%');
+
+      safeSetText('countTrucks', 'Live: 0 • Total: 0');
+      safeSetStyle('barTrucks', 'width', '0%');
+
+      // 5. Reset Backend Server Tracking
       fetch('/api/reset-tracking', { method: 'POST' }).catch(() => {});
-      showToast('Inflow & Outflow counters reset to 0');
+
+      if (showToastMsg) {
+        showToast('All vehicle & traffic counters reset to 0');
+      }
+    }
+
+    function resetInOutCounters() {
+      resetAllTelemetryAndTracking(true);
     }
 
     // Toast helper
@@ -1798,11 +1731,11 @@
 
       // Update HUD & Specs
       document.getElementById('hudCorridorTitle').textContent = `${found.name} • ${found.city}`;
-      document.getElementById('specRegionTag').textContent = found.city.toUpperCase();
-      document.getElementById('specCorridorName').textContent = found.name;
-      document.getElementById('specRoute').textContent = found.road;
-      document.getElementById('specLanes').textContent = `${found.lanes}-Lane Highway`;
-      document.getElementById('specSpeedLimit').textContent = `${found.speed + 15} km/h`;
+      safeSetText('specRegionTag', found.city.toUpperCase());
+      safeSetText('specCorridorName', found.name);
+      safeSetText('specRoute', found.road);
+      safeSetText('specLanes', `${found.lanes}-Lane Highway`);
+      safeSetText('specSpeedLimit', `${found.speed + 15} km/h`);
 
       // Telemetry Cards
       document.getElementById('teleVehicleCount').textContent = found.count;
@@ -1996,7 +1929,7 @@
 
             // Header & Spec latency
             document.getElementById('headerLatencyTag').textContent = `${data.inference_ms} ms`;
-            document.getElementById('specLatency').textContent = `${data.inference_ms} ms`;
+            safeSetText('specLatency', `${data.inference_ms} ms`);
 
             // HUD Pill Status
             const detPill = document.getElementById('hudDetectionPill');
@@ -2242,7 +2175,7 @@
     }
 
     function restartVideo() {
-      resetInOutCounters();
+      resetAllTelemetryAndTracking(false);
       const v = document.getElementById('traffic-video');
       v.currentTime = 0;
       v.play();
@@ -2272,6 +2205,7 @@
     }
 
     function loadSampleTrafficVideo() {
+      resetAllTelemetryAndTracking(false);
       isExternalStream = false;
       const v = document.getElementById('traffic-video');
       const img = document.getElementById('traffic-live-img');
@@ -2285,11 +2219,12 @@
       v.style.display = 'block';
 
       v.src = '188613-883402208.mp4';
+      v.currentTime = 0;
       v.play().catch(e => console.log('Autoplay handled', e));
 
       document.getElementById('hudCorridorTitle').textContent = 'Sample Indian Traffic (1080p) • NH-48 Corridor';
       document.getElementById('btnSourceSample').classList.add('active');
-      showToast('Loaded 1080p Indian Highway Surveillance Footage');
+      showToast('Loaded 1080p Indian Highway Surveillance Footage (All counts reset)');
     }
 
     /* --------------------------------------------------------------------------
@@ -2323,6 +2258,7 @@
     }
 
     function playCustomUploadedVideo(file) {
+      resetAllTelemetryAndTracking(false);
       isExternalStream = false;
       const v = document.getElementById('traffic-video');
       const img = document.getElementById('traffic-live-img');
@@ -2337,32 +2273,17 @@
 
       const fileUrl = URL.createObjectURL(file);
       v.src = fileUrl;
+      v.currentTime = 0;
       v.play().catch(e => console.log('Autoplay handled', e));
-
-      // Immediately reset all telemetry cards to 0 while YOLOv8 scans first frame
-      document.getElementById('teleVehicleCount').textContent = '0';
-      document.getElementById('teleInflowCount').textContent = '0';
-      document.getElementById('teleOutflowCount').textContent = '0';
-      document.getElementById('teleSpeedValue').textContent = '0 km/h';
-      document.getElementById('teleCongestionBadge').textContent = 'Analyzing...';
-      document.getElementById('teleCongestionBar').style.width = '0%';
-      document.getElementById('countCars').textContent = '0 (0%)';
-      document.getElementById('barCars').style.width = '0%';
-      document.getElementById('countMotos').textContent = '0 (0%)';
-      document.getElementById('barMotos').style.width = '0%';
-      document.getElementById('countBuses').textContent = '0 (0%)';
-      document.getElementById('barBuses').style.width = '0%';
-      document.getElementById('countTrucks').textContent = '0 (0%)';
-      document.getElementById('barTrucks').style.width = '0%';
 
       document.getElementById('btnSourceSample').classList.remove('active');
       document.getElementById('hudCorridorTitle').innerHTML = `Uploaded Video &bull; ${file.name}`;
-      document.getElementById('specCorridorName').textContent = file.name;
-      document.getElementById('specRoute').textContent = 'Custom Uploaded Footage';
-      document.getElementById('specRegionTag').textContent = 'USER TEST';
+      safeSetText('specCorridorName', file.name);
+      safeSetText('specRoute', 'Custom Uploaded Footage');
+      safeSetText('specRegionTag', 'USER TEST');
 
       switchMainTab('testing');
-      showToast(`Successfully loaded "${file.name}" for neural vision testing!`);
+      showToast(`Loaded "${file.name}" (All counts reset)`);
     }
 
     /* --------------------------------------------------------------------------
@@ -2428,15 +2349,16 @@
               iframe.src = '';
               if (img) img.style.display = 'none';
 
+              resetAllTelemetryAndTracking(false);
               v.style.display = 'block';
               v.src = prepData.video_url;
+              v.currentTime = 0;
               v.play().catch(e => console.log('Autoplay handled', e));
 
-              resetInOutCounters();
               document.getElementById('hudCorridorTitle').textContent = `YouTube &bull; ${prepData.title || ytId}`;
-              document.getElementById('specCorridorName').textContent = prepData.title || ytId;
-              document.getElementById('specRoute').textContent = 'YouTube Video Stream (AI Tracking Active)';
-              document.getElementById('specRegionTag').textContent = 'YOUTUBE';
+              safeSetText('specCorridorName', prepData.title || ytId);
+              safeSetText('specRoute', 'YouTube Video Stream (AI Tracking Active)');
+              safeSetText('specRegionTag', 'YOUTUBE');
               showToast('YouTube stream ready! Real-time YOLOv8 neural detection active.');
               return;
             }
