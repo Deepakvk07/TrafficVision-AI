@@ -10,3 +10,5 @@ __pycache__/
 # Outputs
 traffic_annotated.mp4
 *.csv
+
+youtube_cache/
