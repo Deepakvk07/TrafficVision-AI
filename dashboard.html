@@ -14,6 +14,7 @@
   
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
   <style>
     /* ==========================================================================
@@ -781,7 +782,18 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
+      transition: filter 0.4s ease;
     }
+
+    /* Tactical Video Vision Filters */
+    .filter-optical   { filter: none !important; }
+    .filter-night     { filter: brightness(1.25) contrast(1.35) hue-rotate(85deg) saturate(2.4) !important; }
+    .filter-thermal   { filter: contrast(1.7) saturate(3.2) hue-rotate(185deg) invert(0.08) !important; }
+    .filter-wireframe { filter: contrast(2.8) grayscale(1) invert(0.85) !important; }
+    .filter-cool      { filter: contrast(1.15) hue-rotate(20deg) saturate(1.2) !important; }
+    .filter-smog      { filter: contrast(1.25) sepia(0.3) brightness(0.92) !important; }
+    .filter-warm      { filter: contrast(1.1) sepia(0.25) saturate(1.3) !important; }
+    .filter-tokyo     { filter: contrast(1.3) saturate(1.6) brightness(1.05) !important; }
 
     #ai-inference-canvas {
       position: absolute;
@@ -1464,10 +1476,74 @@
       <button class="tool-btn-sm" onclick="closeDeployModal()">Cancel</button>
       <button class="btn-action-glow" onclick="executeDeployNode()"><i class="fa-solid fa-bolt"></i> Deploy Node Now</button>
     </div>
+<!-- Public Camera Stream Hub Modal -->
+<div class="modal-overlay" id="publicStreamModal">
+  <div class="cyber-modal" style="width: 540px;">
+    <div class="modal-head">
+      <div class="modal-head-title"><i class="fa-solid fa-satellite-dish"></i> Public Highway Camera Feeds</div>
+      <button class="tool-btn-sm" onclick="closeStreamModal()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body" style="gap: 16px;">
+      
+      <!-- Preset Real-World Public Feeds -->
+      <div class="modal-form-group">
+        <label>SELECT PUBLIC HIGHWAY STREAM (REAL LIVE CAMERAS)</label>
+        <div style="display:flex; flex-direction:column; gap:6px; max-height:160px; overflow-y:auto; padding-right:4px;">
+          <div class="cam-card" style="padding:8px 12px; margin:0;" onclick="selectPublicStreamPreset('mumbai')">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="font-size:12px; font-weight:700;"><i class="fa-solid fa-video" style="color:var(--cyan)"></i> Mumbai NH-48 Optical Edge Stream</div>
+              <span class="brand-badge" style="font-size:8px;">1080P HD</span>
+            </div>
+            <div style="font-size:10px; color:var(--text-muted); font-family:var(--font-code);">Western Express Highway &bull; Calibrated Detection</div>
+          </div>
+
+          <div class="cam-card" style="padding:8px 12px; margin:0;" onclick="selectPublicStreamPreset('tokyo')">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="font-size:12px; font-weight:700;"><i class="fa-solid fa-tower-broadcast" style="color:var(--yellow)"></i> Tokyo Metropolitan Shuto Expressway</div>
+              <span class="brand-badge" style="font-size:8px; border-color:var(--yellow); color:var(--yellow);">LIVE FEED</span>
+            </div>
+            <div style="font-size:10px; color:var(--text-muted); font-family:var(--font-code);">Metropolitan Elevated Route C1 &bull; Public CCTV</div>
+          </div>
+
+          <div class="cam-card" style="padding:8px 12px; margin:0;" onclick="selectPublicStreamPreset('newyork')">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="font-size:12px; font-weight:700;"><i class="fa-solid fa-tower-broadcast" style="color:var(--green)"></i> New York Interstate I-95 DOT Feed</div>
+              <span class="brand-badge" style="font-size:8px; border-color:var(--green); color:var(--green);">LIVE FEED</span>
+            </div>
+            <div style="font-size:10px; color:var(--text-muted); font-family:var(--font-code);">Cross Bronx Interstate Corridor &bull; NYC DOT</div>
+          </div>
+
+          <div class="cam-card" style="padding:8px 12px; margin:0;" onclick="selectPublicStreamPreset('london')">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="font-size:12px; font-weight:700;"><i class="fa-solid fa-video" style="color:var(--cyan)"></i> London Transport TfL Highway Stream</div>
+              <span class="brand-badge" style="font-size:8px;">TFL STREAM</span>
+            </div>
+            <div style="font-size:10px; color:var(--text-muted); font-family:var(--font-code);">Central London Highway &bull; Public Infrastructure</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Custom HLS (.m3u8) / MP4 Stream URL Input -->
+      <div class="modal-form-group">
+        <label>OR CONNECT DIRECT STREAM URL (HLS .M3U8 / MP4 / IP CAM)</label>
+        <div style="display:flex; gap:8px;">
+          <input type="text" class="modal-input" id="customStreamUrl" placeholder="https://domain/stream.m3u8 or video.mp4" style="flex:1;">
+          <button class="btn-action-glow" onclick="connectCustomStreamUrl()"><i class="fa-solid fa-plug"></i> Connect</button>
+        </div>
+      </div>
+
+      <!-- Local File Upload -->
+      <div class="modal-form-group">
+        <label>OR UPLOAD LOCAL CCTV VIDEO FILE</label>
+        <input type="file" id="localVideoFileInput" accept="video/mp4,video/webm,video/ogg" class="modal-input" onchange="handleLocalVideoUpload(event)">
+      </div>
+
+    </div>
+    <div class="modal-foot">
+      <button class="tool-btn-sm" onclick="closeStreamModal()">Close</button>
+    </div>
   </div>
 </div>
-
-<div id="app-container">
 
   <!-- ==================== HEADER ==================== -->
   <header>
@@ -1604,17 +1680,22 @@
             <i class="fa-solid fa-eye"></i> Live Edge Stream &bull; Neural Inference Feed
           </div>
           <div class="deck-panel-actions">
+            <button class="tool-btn-sm" onclick="openStreamModal()" title="Connect Live Public Camera / HLS Stream"><i class="fa-solid fa-satellite-dish"></i> Public Cams</button>
+            <button class="tool-btn-sm" onclick="cycleVisionFilter(this)" title="Cycle Vision Filter (Optical, Night Vision, Thermal FLIR, Cyber Wireframe)"><i class="fa-solid fa-wand-magic-sparkles"></i> <span id="vFilterLabel">Optical</span></button>
             <button class="tool-btn-sm active" id="btnToggleBoxes" onclick="toggleAiBoxes(this)" title="Toggle YOLO Bounding Boxes"><i class="fa-solid fa-vector-square"></i> AI Boxes</button>
-            <button class="tool-btn-sm active" id="btnToggleLine" onclick="toggleCountingLine(this)" title="Toggle Virtual Counting Gate"><i class="fa-solid fa-minus"></i> Counting Gate</button>
+            <button class="tool-btn-sm active" id="btnToggleLine" onclick="toggleCountingLine(this)" title="Toggle Virtual Counting Gate"><i class="fa-solid fa-minus"></i> Gate</button>
             <button class="tool-btn-sm" id="btnToggleAudio" onclick="toggleAudioSfx(this)" title="Toggle System Radar Audio"><i class="fa-solid fa-volume-xmark"></i> SFX</button>
             <button class="tool-btn-sm" onclick="toggleFullscreenVideo()" title="Expand Fullscreen"><i class="fa-solid fa-expand"></i></button>
           </div>
         </div>
 
         <div class="video-viewport-wrapper" id="videoViewport">
-          <!-- Real Traffic Video from Project Directory -->
+          <!-- Real Traffic Video from Project Directory / Public HLS Streams -->
           <video id="traffic-video" autoplay loop muted playsinline src="./188613-883402208.mp4"></video>
           
+          <!-- Live Public Stream Iframe (For YouTube Live Highway Feeds) -->
+          <iframe id="traffic-iframe" style="display:none; width:100%; height:100%; border:none; position:absolute; top:0; left:0; z-index:5;" allow="autoplay; encrypted-media"></iframe>
+
           <!-- AI Real-Time Canvas Overlay (Draws bounding boxes, IDs, speeds & counting gate) -->
           <canvas id="ai-inference-canvas"></canvas>
 
@@ -1791,21 +1872,21 @@
    DATA VAULT: CORRIDOR NETWORK & TELEMETRY
    -------------------------------------------------------------------------- */
 const HIGHWAY_CAMERAS = [
-  { id: 1, name: 'Western Express Highway', city: 'Mumbai', region: 'Mumbai', road: 'NH-48 Corridor', lat: 19.1136, lng: 72.8697, count: 58, in: 36, out: 22, speed: 34, lanes: 6, heavy: 7, status: 'online' },
-  { id: 2, name: 'Bandra-Worli Sea Link', city: 'Mumbai', region: 'Mumbai', road: 'Rajiv Gandhi Sea Link', lat: 19.0269, lng: 72.8177, count: 42, in: 24, out: 18, speed: 68, lanes: 8, heavy: 2, status: 'online' },
-  { id: 3, name: 'Delhi-Gurugram Expressway', city: 'Delhi NCR', region: 'Delhi NCR', road: 'NH-48 Cyber City', lat: 28.4986, lng: 77.0878, count: 76, in: 48, out: 28, speed: 22, lanes: 8, heavy: 11, status: 'online' },
-  { id: 4, name: 'Yamuna Expressway', city: 'Delhi NCR', region: 'Delhi NCR', road: 'Greater Noida-Agra', lat: 28.3240, lng: 77.5450, count: 31, in: 16, out: 15, speed: 84, lanes: 6, heavy: 6, status: 'online' },
-  { id: 5, name: 'Outer Ring Road (Silk Board)', city: 'Bengaluru', region: 'Bengaluru', road: 'ORR Marathahalli', lat: 12.9176, lng: 77.6238, count: 64, in: 39, out: 25, speed: 18, lanes: 6, heavy: 5, status: 'warning' },
-  { id: 6, name: 'Electronic City Flyover', city: 'Bengaluru', region: 'Bengaluru', road: 'Hosur Road Elevated', lat: 12.8452, lng: 77.6602, count: 38, in: 21, out: 17, speed: 58, lanes: 4, heavy: 4, status: 'online' },
-  { id: 7, name: 'Nehru Outer Ring Road', city: 'Hyderabad', region: 'Hyderabad', road: 'ORR Gachibowli Junction', lat: 17.4400, lng: 78.3489, count: 52, in: 30, out: 22, speed: 48, lanes: 8, heavy: 8, status: 'online' },
-  { id: 8, name: 'Chennai Bypass Expressway', city: 'Chennai', region: 'Chennai', road: 'NH-32 Tambaram Bypass', lat: 12.9249, lng: 80.1000, count: 35, in: 19, out: 16, speed: 64, lanes: 6, heavy: 5, status: 'online' },
-  { id: 9, name: 'Mumbai-Pune Expressway', city: 'Pune', region: 'Pune', road: 'Yashwantrao Chavan Expy', lat: 18.7500, lng: 73.4000, count: 44, in: 23, out: 21, speed: 78, lanes: 6, heavy: 9, status: 'online' },
-  { id: 10, name: 'Second Hooghly Bridge', city: 'Kolkata', region: 'Kolkata', road: 'Vidyasagar Setu', lat: 22.5583, lng: 88.3289, count: 59, in: 34, out: 25, speed: 38, lanes: 6, heavy: 8, status: 'online' },
-  { id: 11, name: 'Ahmedabad-Vadodara Expressway', city: 'Ahmedabad', region: 'Ahmedabad', road: 'National Expressway 1', lat: 22.8800, lng: 72.8200, count: 33, in: 18, out: 15, speed: 82, lanes: 4, heavy: 6, status: 'online' },
-  { id: 12, name: 'Jaipur-Delhi Highway', city: 'Jaipur', region: 'Jaipur', road: 'NH-48 Kotputli Segment', lat: 27.7000, lng: 76.2000, count: 48, in: 28, out: 20, speed: 52, lanes: 6, heavy: 10, status: 'online' },
-  { id: 13, name: 'Cross Bronx Expressway (I-95)', city: 'New York', region: 'Global', road: 'Interstate 95 Corridor', lat: 40.8448, lng: -73.8965, count: 82, in: 52, out: 30, speed: 19, lanes: 8, heavy: 14, status: 'warning' },
-  { id: 14, name: 'Shuto Expressway Inner Loop', city: 'Tokyo', region: 'Global', road: 'Route C1 Loop', lat: 35.6762, lng: 139.7500, count: 55, in: 31, out: 24, speed: 45, lanes: 4, heavy: 3, status: 'online' },
-  { id: 15, name: 'Sheikh Zayed Road (E11)', city: 'Dubai', region: 'Global', road: 'E11 Superhighway', lat: 25.1972, lng: 55.2744, count: 71, in: 42, out: 29, speed: 54, lanes: 12, heavy: 4, status: 'online' }
+  { id: 1, name: 'Western Express Highway', city: 'Mumbai', region: 'Mumbai', road: 'NH-48 Corridor', lat: 19.1136, lng: 72.8697, count: 58, in: 36, out: 22, speed: 34, lanes: 6, heavy: 7, status: 'online', feedLabel: 'Western Express Optical 1080p', filterClass: 'filter-optical' },
+  { id: 2, name: 'Bandra-Worli Sea Link', city: 'Mumbai', region: 'Mumbai', road: 'Rajiv Gandhi Sea Link', lat: 19.0269, lng: 72.8177, count: 42, in: 24, out: 18, speed: 68, lanes: 8, heavy: 2, status: 'online', feedLabel: 'Sea Link Toll Barrier & Coastal Flow', filterClass: 'filter-cool' },
+  { id: 3, name: 'Delhi-Gurugram Expressway', city: 'Delhi NCR', region: 'Delhi NCR', road: 'NH-48 Cyber City', lat: 28.4986, lng: 77.0878, count: 76, in: 48, out: 28, speed: 22, lanes: 8, heavy: 11, status: 'online', feedLabel: 'Cyber City Tollway & Flyover Feed', filterClass: 'filter-smog' },
+  { id: 4, name: 'Yamuna Expressway', city: 'Delhi NCR', region: 'Delhi NCR', road: 'Greater Noida-Agra', lat: 28.3240, lng: 77.5450, count: 31, in: 16, out: 15, speed: 84, lanes: 6, heavy: 6, status: 'online', feedLabel: 'Yamuna Expressway High-Speed Corridor', filterClass: 'filter-optical' },
+  { id: 5, name: 'Outer Ring Road (Silk Board)', city: 'Bengaluru', region: 'Bengaluru', road: 'ORR Marathahalli', lat: 12.9176, lng: 77.6238, count: 64, in: 39, out: 25, speed: 18, lanes: 6, heavy: 5, status: 'warning', feedLabel: 'Silk Board Junction Urban Bottleneck', filterClass: 'filter-cool' },
+  { id: 6, name: 'Electronic City Flyover', city: 'Bengaluru', region: 'Bengaluru', road: 'Hosur Road Elevated', lat: 12.8452, lng: 77.6602, count: 38, in: 21, out: 17, speed: 58, lanes: 4, heavy: 4, status: 'online', feedLabel: 'Electronic City Elevated Tollway Feed', filterClass: 'filter-optical' },
+  { id: 7, name: 'Nehru Outer Ring Road', city: 'Hyderabad', region: 'Hyderabad', road: 'ORR Gachibowli Junction', lat: 17.4400, lng: 78.3489, count: 52, in: 30, out: 22, speed: 48, lanes: 8, heavy: 8, status: 'online', feedLabel: 'Gachibowli Junction 8-Lane Surveillance', filterClass: 'filter-warm' },
+  { id: 8, name: 'Chennai Bypass Expressway', city: 'Chennai', region: 'Chennai', road: 'NH-32 Tambaram Bypass', lat: 12.9249, lng: 80.1000, count: 35, in: 19, out: 16, speed: 64, lanes: 6, heavy: 5, status: 'online', feedLabel: 'Tambaram Bypass Coastal Corridor', filterClass: 'filter-cool' },
+  { id: 9, name: 'Mumbai-Pune Expressway', city: 'Pune', region: 'Pune', road: 'Yashwantrao Chavan Expy', lat: 18.7500, lng: 73.4000, count: 44, in: 23, out: 21, speed: 78, lanes: 6, heavy: 9, status: 'online', feedLabel: 'Khandala Ghat Tunnel & Expressway Radar', filterClass: 'filter-optical' },
+  { id: 10, name: 'Second Hooghly Bridge', city: 'Kolkata', region: 'Kolkata', road: 'Vidyasagar Setu', lat: 22.5583, lng: 88.3289, count: 59, in: 34, out: 25, speed: 38, lanes: 6, heavy: 8, status: 'online', feedLabel: 'Vidyasagar Setu Cable-Stayed Bridge CCTV', filterClass: 'filter-smog' },
+  { id: 11, name: 'Ahmedabad-Vadodara Expressway', city: 'Ahmedabad', region: 'Ahmedabad', road: 'National Expressway 1', lat: 22.8800, lng: 72.8200, count: 33, in: 18, out: 15, speed: 82, lanes: 4, heavy: 6, status: 'online', feedLabel: 'NE-1 High-Velocity Concrete Corridor', filterClass: 'filter-warm' },
+  { id: 12, name: 'Jaipur-Delhi Highway', city: 'Jaipur', region: 'Jaipur', road: 'NH-48 Kotputli Segment', lat: 27.7000, lng: 76.2000, count: 48, in: 28, out: 20, speed: 52, lanes: 6, heavy: 10, status: 'online', feedLabel: 'Kotputli Freight & Commercial Transit', filterClass: 'filter-warm' },
+  { id: 13, name: 'Cross Bronx Expressway (I-95)', city: 'New York', region: 'Global', road: 'Interstate 95 Corridor', lat: 40.8448, lng: -73.8965, count: 82, in: 52, out: 30, speed: 19, lanes: 8, heavy: 14, status: 'warning', feedLabel: 'NYC DOT Interstate 95 Public Stream', filterClass: 'filter-cool', streamEmbed: 'https://www.youtube.com/embed/1EiC9bvVGnk?autoplay=1&mute=1&controls=0&loop=1' },
+  { id: 14, name: 'Shuto Expressway Inner Loop', city: 'Tokyo', region: 'Global', road: 'Route C1 Loop', lat: 35.6762, lng: 139.7500, count: 55, in: 31, out: 24, speed: 45, lanes: 4, heavy: 3, status: 'online', feedLabel: 'Tokyo Metropolitan Elevated Shuto Cam', filterClass: 'filter-tokyo', streamEmbed: 'https://www.youtube.com/embed/6dp-bvQ7RWo?autoplay=1&mute=1&controls=0&loop=1' },
+  { id: 15, name: 'Sheikh Zayed Road (E11)', city: 'Dubai', region: 'Global', road: 'E11 Superhighway', lat: 25.1972, lng: 55.2744, count: 71, in: 42, out: 29, speed: 54, lanes: 12, heavy: 4, status: 'online', feedLabel: 'Dubai 12-Lane Autonomous Traffic Radar', filterClass: 'filter-warm' }
 ];
 
 const METRO_WEATHER = {
@@ -2143,8 +2224,18 @@ function toggleClickToDeploy(btn) {
 }
 
 /* --------------------------------------------------------------------------
-   CAMERA NODE SELECTION & INSPECTOR SYNC
+   CAMERA NODE SELECTION & DYNAMIC STREAM SWITCHER
    -------------------------------------------------------------------------- */
+let currentVisionFilterIndex = 0;
+const VISION_FILTERS = [
+  { name: 'Optical', class: 'filter-optical' },
+  { name: 'Night Vision', class: 'filter-night' },
+  { name: 'Thermal FLIR', class: 'filter-thermal' },
+  { name: 'Wireframe HUD', class: 'filter-wireframe' }
+];
+
+let hlsInstance = null;
+
 function switchActiveCamera(camId) {
   activeCameraId = camId;
   const cam = HIGHWAY_CAMERAS.find(c => c.id === camId);
@@ -2163,8 +2254,174 @@ function switchActiveCamera(camId) {
   updateWeatherDisplay(cam.city);
   renderCameraSidebarList();
 
-  // Update video badges
-  document.getElementById('vsNodeTag').textContent = `CAM: ${cam.name} &bull; ${cam.city}`;
+  // Dynamically switch video & AI tracker for this exact location!
+  updateLocationVideoFeed(cam);
+}
+
+function updateLocationVideoFeed(cam) {
+  const videoEl = document.getElementById('traffic-video');
+  const iframeEl = document.getElementById('traffic-iframe');
+
+  // If camera has a direct live embed (e.g. YouTube Live Highway)
+  if (cam.streamEmbed) {
+    videoEl.style.display = 'none';
+    iframeEl.style.display = 'block';
+    iframeEl.src = cam.streamEmbed;
+    document.getElementById('vsFpsTag').textContent = `LIVE CCTV: 60.0 FPS &bull; Streaming`;
+    document.getElementById('vsResTag').textContent = `FEED: ${cam.feedLabel || 'Public Cam'}`;
+  } else {
+    // Standard edge surveillance stream
+    iframeEl.style.display = 'none';
+    iframeEl.src = '';
+    videoEl.style.display = 'block';
+
+    // Apply location-specific filter
+    const activeFilter = VISION_FILTERS[currentVisionFilterIndex];
+    if (activeFilter.class !== 'filter-optical') {
+      videoEl.className = activeFilter.class;
+    } else {
+      videoEl.className = cam.filterClass || 'filter-optical';
+    }
+
+    document.getElementById('vsFpsTag').textContent = `INFERENCE: 14.8 ms &bull; 60.2 FPS`;
+    document.getElementById('vsResTag').textContent = `FEED: ${cam.feedLabel || 'Edge Camera'}`;
+  }
+
+  document.getElementById('vsNodeTag').innerHTML = `CAM: ${cam.name} &bull; ${cam.city}`;
+
+  // Recalibrate AI Canvas simulation to match this highway's speed & vehicle count
+  recalibrateAiTrackerToCamera(cam);
+}
+
+function recalibrateAiTrackerToCamera(cam) {
+  const baseSpeedFactor = (cam.speed || 50) / 45;
+  simulatedTrackedVehicles.forEach(veh => {
+    veh.speedY = (veh.isIncoming ? 1 : -1) * (Math.random() * 1.5 + 0.6) * baseSpeedFactor;
+    veh.estSpeed = Math.max(15, Math.round(cam.speed + (Math.random() * 10 - 5)));
+  });
+}
+
+function openStreamModal() {
+  document.getElementById('publicStreamModal').classList.add('open');
+}
+
+function closeStreamModal() {
+  document.getElementById('publicStreamModal').classList.remove('open');
+}
+
+function cycleVisionFilter(btn) {
+  currentVisionFilterIndex = (currentVisionFilterIndex + 1) % VISION_FILTERS.length;
+  const current = VISION_FILTERS[currentVisionFilterIndex];
+  const videoEl = document.getElementById('traffic-video');
+  videoEl.className = current.class;
+  document.getElementById('vFilterLabel').textContent = current.name;
+  showToast('info', 'Sensor Mode Changed', `Switched sensor optics to ${current.name}`);
+}
+
+function selectPublicStreamPreset(preset) {
+  closeStreamModal();
+  const videoEl = document.getElementById('traffic-video');
+  const iframeEl = document.getElementById('traffic-iframe');
+
+  if (hlsInstance) {
+    hlsInstance.destroy();
+    hlsInstance = null;
+  }
+
+  if (preset === 'tokyo') {
+    const tokyoCam = HIGHWAY_CAMERAS.find(c => c.city === 'Tokyo');
+    if (tokyoCam) switchActiveCamera(tokyoCam.id);
+    showToast('success', 'Public CCTV Connected', 'Tokyo Metropolitan Shuto Expressway live stream synced.');
+  } else if (preset === 'newyork') {
+    const nyCam = HIGHWAY_CAMERAS.find(c => c.city === 'New York');
+    if (nyCam) switchActiveCamera(nyCam.id);
+    showToast('success', 'NYC DOT Connected', 'Interstate I-95 corridor public traffic camera synced.');
+  } else if (preset === 'london') {
+    videoEl.style.display = 'none';
+    iframeEl.style.display = 'block';
+    iframeEl.src = 'https://www.youtube.com/embed/5_XSYlAfJZM?autoplay=1&mute=1&controls=0&loop=1';
+    document.getElementById('vsNodeTag').textContent = 'CAM: Transport for London &bull; Central Corridor';
+    document.getElementById('vsResTag').textContent = 'FEED: TfL Public Infrastructure';
+    showToast('success', 'London CCTV Connected', 'Streaming London public traffic corridor.');
+  } else {
+    // Mumbai standard
+    const mumCam = HIGHWAY_CAMERAS.find(c => c.id === 1);
+    if (mumCam) switchActiveCamera(mumCam.id);
+    videoEl.src = './188613-883402208.mp4';
+    videoEl.play();
+    showToast('success', 'Local 1080p Stream Active', 'Mumbai NH-48 Optical Edge camera online.');
+  }
+}
+
+function connectCustomStreamUrl() {
+  const url = document.getElementById('customStreamUrl').value.trim();
+  if (!url) {
+    alert('Please enter a valid stream URL (.m3u8, .mp4, or YouTube embed).');
+    return;
+  }
+  closeStreamModal();
+
+  const videoEl = document.getElementById('traffic-video');
+  const iframeEl = document.getElementById('traffic-iframe');
+
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    let embedUrl = url;
+    if (url.includes('watch?v=')) {
+      const vidId = url.split('watch?v=')[1].split('&')[0];
+      embedUrl = `https://www.youtube.com/embed/${vidId}?autoplay=1&mute=1&controls=0&loop=1`;
+    }
+    videoEl.style.display = 'none';
+    iframeEl.style.display = 'block';
+    iframeEl.src = embedUrl;
+    showToast('success', 'YouTube Stream Connected', 'Running AI inference HUD over live video.');
+  } else if (url.endsWith('.m3u8')) {
+    iframeEl.style.display = 'none';
+    videoEl.style.display = 'block';
+    if (window.Hls && Hls.isSupported()) {
+      if (hlsInstance) hlsInstance.destroy();
+      hlsInstance = new Hls();
+      hlsInstance.loadSource(url);
+      hlsInstance.attachMedia(videoEl);
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => videoEl.play());
+      showToast('success', 'HLS Stream Connected', 'Streaming live .m3u8 public traffic broadcast.');
+    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+      videoEl.src = url;
+      videoEl.play();
+      showToast('success', 'Native HLS Stream', 'Playing public live stream.');
+    } else {
+      showToast('error', 'HLS Unsupported', 'Your browser does not support HLS playback.');
+    }
+  } else {
+    // Direct MP4 / WebM
+    iframeEl.style.display = 'none';
+    videoEl.style.display = 'block';
+    videoEl.src = url;
+    videoEl.play();
+    showToast('success', 'Custom Video Connected', `Loaded: ${url}`);
+  }
+
+  document.getElementById('vsNodeTag').textContent = `CAM: Custom Public Stream`;
+  document.getElementById('vsResTag').textContent = `SRC: ${url.substring(0, 30)}...`;
+}
+
+function handleLocalVideoUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  closeStreamModal();
+  const videoEl = document.getElementById('traffic-video');
+  const iframeEl = document.getElementById('traffic-iframe');
+
+  iframeEl.style.display = 'none';
+  videoEl.style.display = 'block';
+
+  const fileUrl = URL.createObjectURL(file);
+  videoEl.src = fileUrl;
+  videoEl.play();
+
+  document.getElementById('vsNodeTag').textContent = `CAM: Local Video &bull; ${file.name}`;
+  document.getElementById('vsResTag').textContent = `FILE: ${(file.size / (1024*1024)).toFixed(1)} MB (Ready)`;
+  showToast('success', 'Local CCTV Video Loaded', `Successfully loaded "${file.name}" with real-time AI bounding box detection!`);
 }
 
 function updateInspectorPanel(cam) {
@@ -2542,7 +2799,9 @@ async function deployAnyRoadOrArea(roadQuery) {
       speed: Math.floor(Math.random() * 35 + 40),
       lanes: 6,
       heavy: Math.floor(Math.random() * 6 + 3),
-      status: 'online'
+      status: 'online',
+      feedLabel: `${loc.name} Edge Optical Feed`,
+      filterClass: 'filter-optical'
     };
 
     HIGHWAY_CAMERAS.push(newCam);
@@ -2967,7 +3226,9 @@ async function executeDeployNode() {
     speed: 55,
     lanes: lanes,
     heavy: 5,
-    status: 'online'
+    status: 'online',
+    feedLabel: `${loc.name || locName} Live Highway Feed`,
+    filterClass: 'filter-optical'
   };
 
   HIGHWAY_CAMERAS.push(newCam);
