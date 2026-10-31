@@ -31,7 +31,8 @@
 
 TrafficVision AI features a military-grade, sci-fi cyber command center interface (`dashboard.html`) designed for smart highway operations centers and capstone evaluations:
 
-- 🛰️ **Live Interactive Geospatial Map (Leaflet):** Real-time coverage across 15+ major highway corridors in India (Mumbai NH-48, Delhi-Gurugram Expressway, Bengaluru Silk Board ORR, Hyderabad Outer Ring Road, Pune Expressway, Kolkata EM Bypass, etc.) and global hubs (Tokyo, New York, Dubai).
+- 🛰️ **Live Interactive Geospatial Map (Leaflet):** Real-time coverage across 20+ major highway corridors in India (Mumbai NH-48, Delhi-Gurugram Expressway, Yamuna Expressway, Bengaluru Silk Board ORR, Hyderabad Outer Ring Road, Pune Expressway, Kolkata EM Bypass, etc.) and global hubs (Singapore, Tokyo, New York, London, Hong Kong, San Francisco, Seoul).
+- 🎥 **Real-Time Live Public Traffic Cameras & Gov DOT CCTVs:** Stream genuine 24/7 live video webcams (Tokyo Shuto C1, NYC I-95 & Times Square, Seoul Gangnam) and live auto-refreshing 1080p government CCTV snapshots (Singapore Land Transport Authority, London TfL JamCams, Hong Kong TDCCTV, California Caltrans Bay Bridge), or connect any custom RTSP/HLS (.m3u8)/YouTube live stream on the fly!
 - 🎯 **Target Acquisition & Camera Deployment:** Search **any city in the world** or click anywhere on the map to deploy a new surveillance node on the fly using live OpenStreetMap geocoding!
 - 🤖 **Neural Inference Canvas HUD:** Live streaming 1080p surveillance video with real-time bounding box annotations, tracking IDs, vehicle velocities, and virtual counting gates.
 - ⚡ **Real-Time Telemetry & Charts:** Instantaneous bi-directional vehicle counters, semicircular saturation gauges, live flow charts (Chart.js), and automated incident dispatch logs.
