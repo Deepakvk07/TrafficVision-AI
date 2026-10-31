@@ -1304,10 +1304,12 @@
               <div class="mini-stat-card">
                 <div class="mini-stat-val" style="color:var(--green)" id="teleInflowCount">0</div>
                 <div class="mini-stat-lbl"><i class="fa-solid fa-arrow-down"></i> Inflow Vehicles</div>
+                <div style="font-size:0.68rem; color:var(--text-muted); margin-top:0.25rem;">Gate Crossings: <span id="teleGateInCount" style="color:var(--text-secondary); font-weight:700;">0</span></div>
               </div>
               <div class="mini-stat-card">
                 <div class="mini-stat-val" style="color:var(--amber)" id="teleOutflowCount">0</div>
                 <div class="mini-stat-lbl"><i class="fa-solid fa-arrow-up"></i> Outflow Vehicles</div>
+                <div style="font-size:0.68rem; color:var(--text-muted); margin-top:0.25rem;">Gate Crossings: <span id="teleGateOutCount" style="color:var(--text-secondary); font-weight:700;">0</span></div>
               </div>
             </div>
             <div style="margin-top:0.6rem; display:flex; justify-content:flex-end;">
@@ -1578,6 +1580,8 @@
       safeSetText('teleVehicleCount', '0');
       safeSetText('teleInflowCount', '0');
       safeSetText('teleOutflowCount', '0');
+      safeSetText('teleGateInCount', '0');
+      safeSetText('teleGateOutCount', '0');
       safeSetText('teleSpeedValue', '0 km/h');
 
       const b = document.getElementById('teleCongestionBadge');
@@ -1947,14 +1951,18 @@
 
             if (data.count === 0) {
               // Non-traffic / Cartoon / Empty video: ZERO telemetry
-              document.getElementById('teleInflowCount').textContent = '0';
-              document.getElementById('teleOutflowCount').textContent = '0';
-              document.getElementById('teleSpeedValue').textContent = '0 km/h';
+              safeSetText('teleInflowCount', '0');
+              safeSetText('teleOutflowCount', '0');
+              safeSetText('teleGateInCount', '0');
+              safeSetText('teleGateOutCount', '0');
+              safeSetText('teleSpeedValue', '0 km/h');
 
               const b = document.getElementById('teleCongestionBadge');
-              b.textContent = 'Free Flow (0 Vehicles)';
-              b.className = 'congestion-badge-pill congestion-free';
-              document.getElementById('teleCongestionBar').style.width = '0%';
+              if (b) {
+                b.textContent = 'Free Flow (0 Vehicles)';
+                b.className = 'congestion-badge-pill congestion-free';
+              }
+              safeSetStyle('teleCongestionBar', 'width', '0%');
             } else {
               // Auto-calibrate gate if vehicles are active and gate is far from the traffic stream
               if (!userHasManuallyMovedGate && realYoloDetections.length >= 2) {
@@ -1990,20 +1998,18 @@
                 prevVehiclePositions[trackId] = currY;
               });
 
-              // Synchronize with server-side persistent ByteTrack line crossing counters
-              if (typeof data.in_count === 'number' && data.in_count > inCount) {
+              // Synchronize with server-side comprehensive directional flow tracking
+              if (typeof data.in_count === 'number') {
                 inCount = data.in_count;
-                lastGateCrossingEffect = Date.now();
-                lastCrossingType = 'in';
               }
-              if (typeof data.out_count === 'number' && data.out_count > outCount) {
+              if (typeof data.out_count === 'number') {
                 outCount = data.out_count;
-                lastGateCrossingEffect = Date.now();
-                lastCrossingType = 'out';
               }
 
-              document.getElementById('teleInflowCount').textContent = inCount;
-              document.getElementById('teleOutflowCount').textContent = outCount;
+              safeSetText('teleInflowCount', inCount);
+              safeSetText('teleOutflowCount', outCount);
+              safeSetText('teleGateInCount', data.gate_in || 0);
+              safeSetText('teleGateOutCount', data.gate_out || 0);
 
               const estSpeed = Math.max(18, Math.round(92 - (data.count * 1.1)));
               document.getElementById('teleSpeedValue').textContent = `${estSpeed} km/h`;

@@ -36,11 +36,22 @@ SESSION_TRACKER = {
     'seen_ids': set(),
     'cumulative': {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0},
     'prev_positions': {},      # track_id -> (cx, cy)
-    'counted_in': set(),       # track_ids counted crossing down (inflow)
-    'counted_out': set(),      # track_ids counted crossing up (outflow)
-    'in_count': 0,
-    'out_count': 0
+    'start_positions': {},     # track_id -> (cx, cy)
+    'inflow_ids': set(),       # track_ids classified as Inflow
+    'outflow_ids': set(),      # track_ids classified as Outflow
+    'gate_crossed_in': set(),  # track_ids that crossed gate down
+    'gate_crossed_out': set(), # track_ids that crossed gate up
 }
+
+def reset_session_tracker():
+    SESSION_TRACKER['seen_ids'].clear()
+    SESSION_TRACKER['cumulative'] = {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
+    SESSION_TRACKER['prev_positions'].clear()
+    SESSION_TRACKER['start_positions'].clear()
+    SESSION_TRACKER['inflow_ids'].clear()
+    SESSION_TRACKER['outflow_ids'].clear()
+    SESSION_TRACKER['gate_crossed_in'].clear()
+    SESSION_TRACKER['gate_crossed_out'].clear()
 
 
 # Neural warm-up
@@ -382,13 +393,7 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                 t0 = time.time()
 
                 if payload.get('reset', False):
-                    SESSION_TRACKER['seen_ids'].clear()
-                    SESSION_TRACKER['cumulative'] = {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
-                    SESSION_TRACKER['prev_positions'].clear()
-                    SESSION_TRACKER['counted_in'].clear()
-                    SESSION_TRACKER['counted_out'].clear()
-                    SESSION_TRACKER['in_count'] = 0
-                    SESSION_TRACKER['out_count'] = 0
+                    reset_session_tracker()
 
                 conf_thresh = float(payload.get('conf', 0.15))
                 
@@ -423,15 +428,36 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                     curr_x = (xyxy[0] + xyxy[2]) / 2.0
                     curr_y = (xyxy[1] + xyxy[3]) / 2.0
 
-                    # Spatial virtual gate line crossing tracking
+                    if track_id not in SESSION_TRACKER['start_positions']:
+                        SESSION_TRACKER['start_positions'][track_id] = (curr_x, curr_y)
+
+                    # Physical gate line crossing check
                     if track_id in SESSION_TRACKER['prev_positions']:
                         prev_x, prev_y = SESSION_TRACKER['prev_positions'][track_id]
-                        if prev_y < gate_line_y and curr_y >= gate_line_y and track_id not in SESSION_TRACKER['counted_in']:
-                            SESSION_TRACKER['in_count'] += 1
-                            SESSION_TRACKER['counted_in'].add(track_id)
-                        elif prev_y > gate_line_y and curr_y <= gate_line_y and track_id not in SESSION_TRACKER['counted_out']:
-                            SESSION_TRACKER['out_count'] += 1
-                            SESSION_TRACKER['counted_out'].add(track_id)
+                        if prev_y < gate_line_y and curr_y >= gate_line_y:
+                            SESSION_TRACKER['gate_crossed_in'].add(track_id)
+                            SESSION_TRACKER['inflow_ids'].add(track_id)
+                            SESSION_TRACKER['outflow_ids'].discard(track_id)
+                        elif prev_y > gate_line_y and curr_y <= gate_line_y:
+                            SESSION_TRACKER['gate_crossed_out'].add(track_id)
+                            SESSION_TRACKER['outflow_ids'].add(track_id)
+                            SESSION_TRACKER['inflow_ids'].discard(track_id)
+
+                    # Trajectory direction classification if not crossed gate
+                    if track_id not in SESSION_TRACKER['gate_crossed_in'] and track_id not in SESSION_TRACKER['gate_crossed_out']:
+                        start_x, start_y = SESSION_TRACKER['start_positions'][track_id]
+                        net_dy = curr_y - start_y
+                        if net_dy > 1.2:
+                            SESSION_TRACKER['inflow_ids'].add(track_id)
+                            SESSION_TRACKER['outflow_ids'].discard(track_id)
+                        elif net_dy < -1.2:
+                            SESSION_TRACKER['outflow_ids'].add(track_id)
+                            SESSION_TRACKER['inflow_ids'].discard(track_id)
+                        else:
+                            if curr_y >= gate_line_y:
+                                SESSION_TRACKER['inflow_ids'].add(track_id)
+                            else:
+                                SESSION_TRACKER['outflow_ids'].add(track_id)
 
                     SESSION_TRACKER['prev_positions'][track_id] = (curr_x, curr_y)
 
@@ -441,6 +467,26 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                         'conf': round(conf, 2),
                         'cls': cls_name
                     })
+
+                # Ensure every single seen ID is attributed to Inflow or Outflow
+                for tid in SESSION_TRACKER['seen_ids']:
+                    if tid not in SESSION_TRACKER['inflow_ids'] and tid not in SESSION_TRACKER['outflow_ids']:
+                        if tid in SESSION_TRACKER['start_positions'] and SESSION_TRACKER['start_positions'][tid][1] >= gate_line_y:
+                            SESSION_TRACKER['inflow_ids'].add(tid)
+                        else:
+                            SESSION_TRACKER['outflow_ids'].add(tid)
+
+                total_cum = sum(SESSION_TRACKER['cumulative'].values())
+                in_count = len(SESSION_TRACKER['inflow_ids'])
+                out_count = len(SESSION_TRACKER['outflow_ids'])
+
+                if total_cum > 0 and (in_count + out_count) != total_cum:
+                    ratio = in_count / max(1, (in_count + out_count))
+                    in_count = int(round(total_cum * ratio))
+                    out_count = total_cum - in_count
+
+                gate_in = len(SESSION_TRACKER['gate_crossed_in'])
+                gate_out = len(SESSION_TRACKER['gate_crossed_out'])
 
                 count = len(detections)
                 if count <= 10:
@@ -460,8 +506,10 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                     'class_counts': class_counts,
                     'cumulative_counts': dict(SESSION_TRACKER['cumulative']),
                     'total_cumulative': total_cum,
-                    'in_count': SESSION_TRACKER['in_count'],
-                    'out_count': SESSION_TRACKER['out_count'],
+                    'in_count': in_count,
+                    'out_count': out_count,
+                    'gate_in': gate_in,
+                    'gate_out': gate_out,
                     'congestion': congestion,
                     'frame_width': w,
                     'frame_height': h,
@@ -481,17 +529,11 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
             # enabling full HTML5 Canvas + YOLOv8 real-time AI bounding box detection!
             # -------------------------------------------------------------
             if parsed_url.path == '/api/reset-tracking':
-                SESSION_TRACKER['seen_ids'].clear()
-                SESSION_TRACKER['cumulative'] = {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
-                SESSION_TRACKER['prev_positions'].clear()
-                SESSION_TRACKER['counted_in'].clear()
-                SESSION_TRACKER['counted_out'].clear()
-                SESSION_TRACKER['in_count'] = 0
-                SESSION_TRACKER['out_count'] = 0
+                reset_session_tracker()
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({'status': 'reset', 'in_count': 0, 'out_count': 0, 'cumulative': SESSION_TRACKER['cumulative']}).encode('utf-8'))
+                self.wfile.write(json.dumps({'status': 'reset', 'in_count': 0, 'out_count': 0, 'gate_in': 0, 'gate_out': 0, 'cumulative': SESSION_TRACKER['cumulative']}).encode('utf-8'))
                 return
 
             if parsed_url.path == '/api/prepare-youtube':
