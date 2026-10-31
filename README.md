@@ -17,6 +17,7 @@
 ---
 
 [🚀 Quick Start](#-quick-start-30-seconds) •
+[🖥️ Live Tactical Dashboard](#-live-tactical-surveillance-dashboard) •
 [✨ Key Superpowers](#-key-superpowers) •
 [🧠 System Architecture](#-system-architecture) •
 [📊 Telemetry & Analytics](#-telemetry--analytics) •
@@ -25,6 +26,30 @@
 ---
 
 </div>
+
+## 🖥️ Live Tactical Surveillance Dashboard
+
+TrafficVision AI features a military-grade, sci-fi cyber command center interface (`dashboard.html`) designed for smart highway operations centers and capstone evaluations:
+
+- 🛰️ **Live Interactive Geospatial Map (Leaflet):** Real-time coverage across 15+ major highway corridors in India (Mumbai NH-48, Delhi-Gurugram Expressway, Bengaluru Silk Board ORR, Hyderabad Outer Ring Road, Pune Expressway, Kolkata EM Bypass, etc.) and global hubs (Tokyo, New York, Dubai).
+- 🎯 **Target Acquisition & Camera Deployment:** Search **any city in the world** or click anywhere on the map to deploy a new surveillance node on the fly using live OpenStreetMap geocoding!
+- 🤖 **Neural Inference Canvas HUD:** Live streaming 1080p surveillance video with real-time bounding box annotations, tracking IDs, vehicle velocities, and virtual counting gates.
+- ⚡ **Real-Time Telemetry & Charts:** Instantaneous bi-directional vehicle counters, semicircular saturation gauges, live flow charts (Chart.js), and automated incident dispatch logs.
+- 🚨 **One-Click Stress Simulator:** Simulate emergency congestion spikes, dispatch traffic advisories, and export CSV audit reports.
+
+### 🕹️ Launching the Dashboard
+
+```bash
+# Method 1: Double-click launch_dashboard.bat (Windows)
+
+# Method 2: Via Python Launcher
+python app.py
+
+# Method 3: Direct Browser Launch
+# Simply double-click dashboard.html in your file explorer!
+```
+
+---
 
 ## 🌟 The Problem & The Solution
 
@@ -122,6 +147,9 @@ TrafficVision AI abandons ugly default overlapping boxes in favor of a sleek, mi
 
 ```text
 TrafficVision-AI/
+├── dashboard.html              # Sci-Fi Cyberpunk Live Surveillance & Geospatial Dashboard
+├── launch_dashboard.bat        # One-click Windows launcher for instant demo
+├── app.py                      # Local Python streaming server & dashboard launcher
 ├── TrafficVision_AI.ipynb      # Complete, human-written Google Colab Notebook
 ├── 188613-883402208.mp4        # 1080p Highway Surveillance Benchmark Footage
 ├── .gitignore                  # Git hygiene configuration
