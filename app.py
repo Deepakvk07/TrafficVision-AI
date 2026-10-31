@@ -1,7 +1,7 @@
 """
-TrafficVision AI - High Performance Multi-Threaded Video, CCTV & Telemetry Server
-Streams live 1080p highway video, proxies real-time municipal DOT CCTV cameras,
-and handles multi-node geocoding with zero hang.
+TrafficVision AI - High Performance Multi-Threaded Neural Inference & Telemetry Server
+Runs real Ultralytics YOLOv8 inference on video/camera frames, proxies real-time municipal
+DOT CCTV feeds, and handles multi-node geocoding with zero hang.
 """
 import http.server
 import socketserver
@@ -11,6 +11,10 @@ import json
 import time
 import os
 import sys
+import base64
+import numpy as np
+import cv2
+from ultralytics import YOLO
 
 # Configure UTF-8 for Windows PowerShell terminals
 if hasattr(sys.stdout, 'reconfigure'):
@@ -19,6 +23,14 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 PORT = 8080
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(DIRECTORY, "yolov8n.pt")
+
+print("[*] Initializing Ultralytics YOLOv8 Neural Model...")
+yolo_model = YOLO(MODEL_PATH)
+# Warm up model with blank frame
+_warmup_frame = np.zeros((360, 640, 3), dtype=np.uint8)
+yolo_model.predict(_warmup_frame, classes=[2, 3, 5, 7], verbose=False)
+print("[+] YOLOv8 Ready: Neural Inference Engine Online (Classes: car, motorcycle, bus, truck)")
 
 # Live CCTV Source Registry
 CCTV_SOURCES = {
@@ -54,7 +66,6 @@ CCTV_SOURCES = {
     }
 }
 
-# In-memory cache for Singapore LTA cameras
 _sg_cache = {
     'timestamp': 0,
     'cameras': []
@@ -63,7 +74,6 @@ _sg_cache = {
 def get_singapore_cameras():
     global _sg_cache
     now = time.time()
-    # Cache for 45 seconds to avoid API rate limits
     if now - _sg_cache['timestamp'] < 45 and _sg_cache['cameras']:
         return _sg_cache['cameras']
     
@@ -94,19 +104,112 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
 
     def log_message(self, format, *args):
-        # Concise logging to keep server fast
         pass
 
     def end_headers(self):
-        # Enable CORS for all local requests
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', '*')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
         super().end_headers()
 
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
+
+    def do_POST(self):
+        try:
+            parsed_url = urllib.parse.urlparse(self.path)
+            
+            # -------------------------------------------------------------
+            # Real-Time Neural Inference: POST /api/detect
+            # -------------------------------------------------------------
+            if parsed_url.path == '/api/detect':
+                content_len = int(self.headers.get('Content-Length', 0))
+                if content_len == 0:
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'error': 'Empty payload'}).encode('utf-8'))
+                    return
+                
+                body_bytes = self.rfile.read(content_len)
+                try:
+                    payload = json.loads(body_bytes.decode('utf-8'))
+                except Exception:
+                    payload = {}
+                
+                img_data = payload.get('image', '')
+                if not img_data:
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'error': 'No image provided'}).encode('utf-8'))
+                    return
+                
+                if ',' in img_data:
+                    img_data = img_data.split(',', 1)[1]
+                
+                try:
+                    raw_bytes = base64.b64decode(img_data)
+                    nparr = np.frombuffer(raw_bytes, np.uint8)
+                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                except Exception as e:
+                    frame = None
+                
+                if frame is None or frame.size == 0:
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'error': 'Failed to decode image'}).encode('utf-8'))
+                    return
+                
+                h, w = frame.shape[:2]
+                t0 = time.time()
+                
+                # Run real YOLOv8 inference: filter strictly for vehicle classes (2:car, 3:motorcycle, 5:bus, 7:truck)
+                conf_thresh = float(payload.get('conf', 0.25))
+                res = yolo_model.predict(frame, classes=[2, 3, 5, 7], conf=conf_thresh, verbose=False)
+                dt = (time.time() - t0) * 1000
+                
+                detections = []
+                for idx, box in enumerate(res[0].boxes):
+                    xyxy = box.xyxy[0].tolist()
+                    conf = float(box.conf[0])
+                    cls_id = int(box.cls[0])
+                    cls_name = yolo_model.names.get(cls_id, 'vehicle')
+                    detections.append({
+                        'id': idx + 1,
+                        'box': [round(x, 1) for x in xyxy],
+                        'conf': round(conf, 2),
+                        'cls': cls_name
+                    })
+                
+                result_payload = {
+                    'detections': detections,
+                    'count': len(detections),
+                    'frame_width': w,
+                    'frame_height': h,
+                    'inference_ms': round(dt, 1)
+                }
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(result_payload).encode('utf-8'))
+                return
+            
+            self.send_response(404)
+            self.end_headers()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            pass
+        except Exception as e:
+            try:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception:
+                pass
 
     def do_GET(self):
         try:
@@ -124,7 +227,6 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                 if 'singapore' in source_key:
                     sg_cams = get_singapore_cameras()
                     if sg_cams:
-                        # Allow selecting camera index or camera_id
                         cam_idx = 0
                         if 'pie' in source_key and len(sg_cams) > 1:
                             cam_idx = 1
@@ -149,7 +251,6 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                     self.wfile.write(json.dumps({'error': 'Live CCTV source not available'}).encode('utf-8'))
                     return
 
-                # Fetch real-time snapshot bytes
                 try:
                     req = urllib.request.Request(
                         target_url,
@@ -185,7 +286,8 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                     'status': 'online',
                     'timestamp': int(time.time()),
                     'singapore_cameras': len(sg_cams),
-                    'active_sources': list(CCTV_SOURCES.keys()) + ['singapore_aye', 'singapore_pie']
+                    'active_sources': list(CCTV_SOURCES.keys()) + ['singapore_aye', 'singapore_pie'],
+                    'yolo_model': 'yolov8n.pt (Active)'
                 }
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
@@ -206,7 +308,6 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 results = []
-                # 1. Try Photon Komoot API (Fast, OpenStreetMap based)
                 try:
                     photon_url = f"https://photon.komoot.io/api/?q={urllib.parse.quote(q)}&limit=3"
                     req = urllib.request.Request(photon_url, headers={'User-Agent': 'TrafficVisionAI/2.0'})
@@ -237,7 +338,6 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
             # Default static file serving (with broken socket protection)
             return super().do_GET()
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
-            # Normal client abort during video streaming seek
             pass
 
     def copyfile(self, source, outputfile):
@@ -250,15 +350,16 @@ def launch():
     os.chdir(DIRECTORY)
     url = f"http://localhost:{PORT}/dashboard.html"
     print("=" * 65)
-    print("[*] TRAFFICVISION AI - MULTI-THREADED STREAMING SERVER")
+    print("[*] TRAFFICVISION AI - MULTI-THREADED REAL-TIME INFERENCE SERVER")
     print("=" * 65)
     print(f"[*] Serving Directory: {DIRECTORY}")
     print(f"[*] Access URL: {url}")
+    print(f"[*] YOLOv8 Neural Inference: http://localhost:{PORT}/api/detect")
     print(f"[*] Live CCTV Proxy: http://localhost:{PORT}/api/live-cctv?source=singapore")
     print("=" * 65)
     
     with MultiThreadedTCPServer(("", PORT), TacticalHandler) as httpd:
-        print(f"[*] Listening on port {PORT} (Multi-threaded & Video Streaming Optimized)")
+        print(f"[*] Listening on port {PORT} (Multi-threaded & Real-time YOLOv8 Inference Ready)")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

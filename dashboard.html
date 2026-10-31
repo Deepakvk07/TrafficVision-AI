@@ -1658,11 +1658,11 @@
       <div class="hud-select-wrapper">
         <i class="fa-solid fa-map-location-dot"></i>
         <select id="mapStyleSelect" onchange="handleMapLayerChange(this.value)">
-          <option value="dark">CARTO Dark Matter (Tactical Pro)</option>
-          <option value="voyager">CARTO Voyager (Navigation)</option>
-          <option value="positron">CARTO Positron (High-Contrast)</option>
-          <option value="satellite">Esri World Imagery (Satellite)</option>
-          <option value="street">OpenStreetMap (Street)</option>
+          <option value="dark">Esri Tactical Dark (No Watermark)</option>
+          <option value="street">OpenStreetMap Standard</option>
+          <option value="satellite">Esri World Imagery (Satellite 4K)</option>
+          <option value="topo">Esri Topographical Relief</option>
+          <option value="light">Esri Light Canvas (Day Mode)</option>
         </select>
       </div>
     </div>
@@ -2138,8 +2138,6 @@ updateSystemClock();
 /* --------------------------------------------------------------------------
    MAP INITIALIZATION & CONTROLS
    -------------------------------------------------------------------------- */
-const CARTO_API_KEY = 'cb1_4z27_1_e4ef10fe7634ca67b72be930';
-
 function initializeLeafletMap() {
   // Center roughly over India, but support global
   mapInstance = L.map('map', {
@@ -2151,8 +2149,8 @@ function initializeLeafletMap() {
 
   L.control.zoom({ position: 'bottomright' }).addTo(mapInstance);
 
-  const darkTileUrl = `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`;
-  currentTileLayer = L.tileLayer(darkTileUrl, { maxZoom: 19, subdomains: 'abcd' }).addTo(mapInstance);
+  const darkTileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+  currentTileLayer = L.tileLayer(darkTileUrl, { maxZoom: 16 }).addTo(mapInstance);
 
   // Render all cameras
   HIGHWAY_CAMERAS.forEach(cam => addCameraMarker(cam));
@@ -2276,13 +2274,16 @@ function refreshAllMarkers() {
 function handleMapLayerChange(style) {
   if (currentTileLayer) mapInstance.removeLayer(currentTileLayer);
   const layers = {
-    dark: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-    voyager: `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-    positron: `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+    dark: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    street: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+    street: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    topo: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    light: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    voyager: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    positron: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'
   };
-  currentTileLayer = L.tileLayer(layers[style] || layers.dark, { maxZoom: 19, subdomains: 'abcd' }).addTo(mapInstance);
+  const maxZ = (style === 'street' || style === 'satellite') ? 19 : 16;
+  currentTileLayer = L.tileLayer(layers[style] || layers.dark, { maxZoom: maxZ }).addTo(mapInstance);
 }
 
 function toggleCongestionHeat(btn) {
@@ -2595,6 +2596,17 @@ function handleLocalVideoUpload(event) {
   closeStreamModal();
   const videoEl = document.getElementById('traffic-video');
   const iframeEl = document.getElementById('traffic-iframe');
+  const imgEl = document.getElementById('traffic-live-img');
+
+  if (imgEl) imgEl.style.display = 'none';
+  if (liveSnapshotTimer) {
+    clearInterval(liveSnapshotTimer);
+    liveSnapshotTimer = null;
+  }
+  if (hlsInstance) {
+    hlsInstance.destroy();
+    hlsInstance = null;
+  }
 
   iframeEl.style.display = 'none';
   videoEl.style.display = 'block';
@@ -2603,8 +2615,15 @@ function handleLocalVideoUpload(event) {
   videoEl.src = fileUrl;
   videoEl.play();
 
-  document.getElementById('vsNodeTag').textContent = `CAM: Local Video &bull; ${file.name}`;
+  document.getElementById('vsNodeTag').innerHTML = `CAM: Local Video &bull; ${file.name}`;
   document.getElementById('vsResTag').textContent = `FILE: ${(file.size / (1024*1024)).toFixed(1)} MB (Ready)`;
+  document.getElementById('vsFpsTag').innerHTML = `<span style="color:var(--yellow); font-weight:700;">● ANALYZING FEED</span> &bull; YOLOv8`;
+
+  // Update Inspector Panel
+  document.getElementById('inspCameraName').textContent = 'Custom Video Feed';
+  document.getElementById('inspHighwayCorridor').textContent = file.name;
+  document.getElementById('inspCoordinates').innerHTML = `Local File &bull; Neural Inference Active`;
+
   showToast('success', 'Local CCTV Video Loaded', `Successfully loaded "${file.name}" with real-time AI bounding box detection!`);
 }
 
@@ -3122,15 +3141,13 @@ function updateWeatherDisplay(city) {
 }
 
 /* --------------------------------------------------------------------------
-   AI INFERENCE REAL-TIME CANVAS OVERLAY (YOLO + BYTETRACK SIMULATOR)
+   REAL-TIME ULTRALYTICS YOLOv8 NEURAL INFERENCE PIPELINE
    -------------------------------------------------------------------------- */
-const simulatedTrackedVehicles = [];
-const VEHICLE_CLASSES = [
-  { name: 'car', color: '#00ff88', width: 48, height: 38 },
-  { name: 'truck', color: '#ff7700', width: 68, height: 54 },
-  { name: 'bus', color: '#00ccff', width: 72, height: 56 },
-  { name: 'motorcycle', color: '#ffcc00', width: 26, height: 26 }
-];
+let realYoloDetections = [];
+let isDetecting = false;
+let lastInferenceMs = 14.8;
+let lastInferenceCount = 0;
+const simulatedTrackedVehicles = []; // Compatibility stub
 
 function initAiVehicleTracker() {
   const canvas = document.getElementById('ai-inference-canvas');
@@ -3143,22 +3160,106 @@ function initAiVehicleTracker() {
   window.addEventListener('resize', resizeCanvas);
   resizeCanvas();
 
-  // Populate dynamic vehicles
-  for (let i = 0; i < 18; i++) {
-    const cls = VEHICLE_CLASSES[Math.floor(Math.random() * VEHICLE_CLASSES.length)];
-    const isIncoming = Math.random() > 0.45;
-    simulatedTrackedVehicles.push({
-      id: Math.floor(Math.random() * 880) + 10,
-      cls: cls,
-      x: Math.random() * (canvas.width || 600),
-      y: Math.random() * (canvas.height || 200),
-      speedY: (isIncoming ? 1 : -1) * (Math.random() * 1.5 + 0.8),
-      speedX: (Math.random() - 0.5) * 0.4,
-      isIncoming: isIncoming,
-      conf: (Math.random() * 0.15 + 0.82).toFixed(2),
-      estSpeed: Math.floor(Math.random() * 40 + 35)
-    });
+  // Active Real-Time YOLOv8 Neural Inference Poller
+  async function pollRealYoloInference() {
+    const videoEl = document.getElementById('traffic-video');
+    const imgEl = document.getElementById('traffic-live-img');
+    const iframeEl = document.getElementById('traffic-iframe');
+
+    // If iframe (e.g. YouTube) is displayed, do not run canvas pixel inference
+    if (iframeEl && iframeEl.style.display !== 'none') {
+      realYoloDetections = [];
+      const fpsTag = document.getElementById('vsFpsTag');
+      if (fpsTag) {
+        fpsTag.innerHTML = `<span style="color:var(--yellow); font-weight:700;">● EXTERNAL STREAM</span> &bull; 60 FPS`;
+      }
+      return;
+    }
+
+    let activeMedia = null;
+    let mediaWidth = 640;
+    let mediaHeight = 360;
+
+    if (videoEl && videoEl.style.display !== 'none' && videoEl.videoWidth > 0 && !videoEl.paused) {
+      activeMedia = videoEl;
+      mediaWidth = videoEl.videoWidth;
+      mediaHeight = videoEl.videoHeight;
+    } else if (imgEl && imgEl.style.display !== 'none' && imgEl.naturalWidth > 0) {
+      activeMedia = imgEl;
+      mediaWidth = imgEl.naturalWidth;
+      mediaHeight = imgEl.naturalHeight;
+    }
+
+    if (!activeMedia) {
+      realYoloDetections = [];
+      return;
+    }
+
+    if (isDetecting) return;
+    isDetecting = true;
+
+    try {
+      const offscreen = document.createElement('canvas');
+      const scale = Math.min(1.0, 640 / Math.max(mediaWidth, mediaHeight));
+      offscreen.width = Math.max(320, Math.round(mediaWidth * scale));
+      offscreen.height = Math.max(180, Math.round(mediaHeight * scale));
+      const offCtx = offscreen.getContext('2d');
+      offCtx.drawImage(activeMedia, 0, 0, offscreen.width, offscreen.height);
+
+      const b64 = offscreen.toDataURL('image/jpeg', 0.65);
+
+      const resp = await fetch('/api/detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: b64, conf: 0.25 })
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        lastInferenceMs = data.inference_ms;
+        lastInferenceCount = data.count;
+
+        // Map pixel detections to normalized coordinates [0.0 - 1.0]
+        realYoloDetections = (data.detections || []).map(d => ({
+          id: d.id,
+          cls: d.cls,
+          conf: d.conf,
+          normBox: [
+            d.box[0] / offscreen.width,
+            d.box[1] / offscreen.height,
+            d.box[2] / offscreen.width,
+            d.box[3] / offscreen.height
+          ],
+          estSpeed: Math.floor(Math.random() * 20 + 40)
+        }));
+
+        const fpsTag = document.getElementById('vsFpsTag');
+        if (fpsTag) {
+          if (data.count === 0) {
+            fpsTag.innerHTML = `<span style="color:var(--text-muted)">YOLOv8: 0 VEHICLES DETECTED</span> &bull; ${data.inference_ms} ms`;
+          } else {
+            fpsTag.innerHTML = `<span style="color:var(--green); font-weight:700;">YOLOv8: ${data.count} VEHICLES DETECTED</span> &bull; ${data.inference_ms} ms`;
+          }
+        }
+
+        // If inspecting custom/uploaded video, dynamically update inspector vehicle counter
+        const nodeTag = document.getElementById('vsNodeTag');
+        if (nodeTag && nodeTag.textContent.includes('Local Video')) {
+          animateDigitCounter('inspVehicleCount', data.count);
+          const tier = calculateCongestionTier(data.count);
+          const color = THEME_COLORS[tier];
+          drawCongestionGauge(CONGESTION_PERCENT[tier], color);
+        }
+      }
+    } catch (err) {
+      // Ignored for continuous video stream
+    } finally {
+      isDetecting = false;
+    }
   }
+
+  // Poll YOLOv8 neural inference every 120ms (~8 FPS)
+  setInterval(pollRealYoloInference, 120);
 
   function renderAiFrame() {
     resizeCanvas();
@@ -3181,56 +3282,50 @@ function initAiVehicleTracker() {
       ctx.shadowBlur = 0;
       ctx.setLineDash([]);
 
-      // Gate Label
       ctx.fillStyle = '#ffcc00';
       ctx.font = 'bold 11px JetBrains Mono';
       ctx.fillText('COUNTING GATE (Y = 0.28)', 16, countingLineY - 8);
     }
 
-    // 2. Update & Draw Tracked Bounding Boxes
-    simulatedTrackedVehicles.forEach(veh => {
-      veh.y += veh.speedY;
-      veh.x += veh.speedX;
+    // 2. Draw Real YOLOv8 Detections (Only if vehicles actually exist in frame!)
+    if (showAiBoxes && realYoloDetections.length > 0) {
+      const colorMap = {
+        car: '#00ff88',
+        motorcycle: '#ffcc00',
+        bus: '#00ccff',
+        truck: '#ff7700',
+        vehicle: '#00ff88'
+      };
 
-      // Wrap-around screen bounds
-      if (veh.y > canvas.height + 60) {
-        veh.y = -40;
-        veh.x = Math.random() * canvas.width;
-      }
-      if (veh.y < -50) {
-        veh.y = canvas.height + 40;
-        veh.x = Math.random() * canvas.width;
-      }
-
-      if (showAiBoxes) {
-        const w = veh.cls.width;
-        const h = veh.cls.height;
+      realYoloDetections.forEach(veh => {
+        const x1 = veh.normBox[0] * canvas.width;
+        const y1 = veh.normBox[1] * canvas.height;
+        const x2 = veh.normBox[2] * canvas.width;
+        const y2 = veh.normBox[3] * canvas.height;
+        const w = Math.max(8, x2 - x1);
+        const h = Math.max(8, y2 - y1);
+        const color = colorMap[veh.cls] || '#00ff88';
 
         // Bounding Box Rectangle
-        ctx.strokeStyle = veh.cls.color;
-        ctx.lineWidth = 1.8;
-        ctx.shadowColor = veh.cls.color;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.0;
+        ctx.shadowColor = color;
         ctx.shadowBlur = 6;
-        ctx.strokeRect(veh.x, veh.y, w, h);
+        ctx.strokeRect(x1, y1, w, h);
         ctx.shadowBlur = 0;
 
         // Top ID Badge Pill
-        const label = `#${veh.id} ${veh.cls.name} ${veh.conf}`;
-        ctx.font = '9px JetBrains Mono';
+        const label = `#${veh.id} ${veh.cls} ${veh.conf}`;
+        ctx.font = 'bold 9px JetBrains Mono';
         const txtWidth = ctx.measureText(label).width;
 
         ctx.fillStyle = 'rgba(6, 14, 30, 0.9)';
-        ctx.fillRect(veh.x, veh.y - 14, txtWidth + 6, 14);
+        ctx.fillRect(x1, Math.max(0, y1 - 14), txtWidth + 6, 14);
 
-        ctx.fillStyle = veh.cls.color;
-        ctx.fillText(label, veh.x + 3, veh.y - 4);
-
-        // Speed indicator under box
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-        ctx.font = '8px Orbitron';
-        ctx.fillText(`${veh.estSpeed} km/h`, veh.x, veh.y + h + 10);
-      }
-    });
+        ctx.fillStyle = color;
+        ctx.fillText(label, x1 + 3, Math.max(10, y1 - 4));
+      });
+    }
 
     requestAnimationFrame(renderAiFrame);
   }
@@ -3620,7 +3715,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Welcome System Toasts
   setTimeout(() => showToast('success', 'TrafficVision Engine Online', '15 Highway Surveillance Nodes calibrated & streaming.'), 1000);
-  setTimeout(() => showToast('success', 'CARTO Pro API Connected', 'Authenticated high-resolution tactical basemaps active (API Key verified).'), 2200);
+  setTimeout(() => showToast('success', 'Tactical Basemap Online', 'High-resolution tactical GIS basemaps initialized (No Watermark).'), 2200);
   setTimeout(() => showToast('info', 'YOLOv8 + ByteTrack Active', 'Model imgsz=1280, conf=0.20, tracking vehicle classes [2,3,5,7].'), 4000);
 });
 </script>
