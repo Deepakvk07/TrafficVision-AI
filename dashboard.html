@@ -1322,6 +1322,11 @@
                 <div class="mini-stat-lbl"><i class="fa-solid fa-arrow-up"></i> Outflow Vehicles</div>
               </div>
             </div>
+            <div style="margin-top:0.6rem; display:flex; justify-content:flex-end;">
+              <button class="tool-btn" style="padding:0.3rem 0.75rem; font-size:0.75rem;" onclick="resetInOutCounters()">
+                <i class="fa-solid fa-rotate-left"></i> Reset In/Out Counters
+              </button>
+            </div>
           </div>
 
           <!-- Card 2: Vehicle Classification Breakdown (Crucial for Indian Roads!) -->
@@ -1530,6 +1535,14 @@
     let showAiBoxes = true;
     let showCountingLine = true;
     let isExternalStream = false;
+    let manualResetActive = false;
+
+    function resetInOutCounters() {
+      manualResetActive = true;
+      document.getElementById('teleInflowCount').textContent = '0';
+      document.getElementById('teleOutflowCount').textContent = '0';
+      showToast('Inflow & Outflow counters reset to 0');
+    }
 
     // Toast helper
     function showToast(message) {
@@ -1653,8 +1666,7 @@
       // Telemetry Cards
       document.getElementById('teleVehicleCount').textContent = found.count;
       document.getElementById('teleSpeedValue').textContent = `${found.speed} km/h`;
-      document.getElementById('teleInflowCount').textContent = found.in;
-      document.getElementById('teleOutflowCount').textContent = found.out;
+      resetInOutCounters();
 
       // Congestion Tier
       const badge = document.getElementById('teleCongestionBadge');
@@ -1802,11 +1814,16 @@
               b.className = 'congestion-badge-pill congestion-free';
               document.getElementById('teleCongestionBar').style.width = '0%';
             } else {
-              // Live Traffic Feed: Dynamic Inflow & Outflow summing to exact count
-              const inflow = Math.round(data.count * 0.58);
-              const outflow = Math.max(0, data.count - inflow);
-              document.getElementById('teleInflowCount').textContent = inflow;
-              document.getElementById('teleOutflowCount').textContent = outflow;
+              // Live Traffic Feed: If user manually clicked reset, keep 0 or compute dynamic
+              if (!manualResetActive) {
+                const inflow = Math.round(data.count * 0.58);
+                const outflow = Math.max(0, data.count - inflow);
+                document.getElementById('teleInflowCount').textContent = inflow;
+                document.getElementById('teleOutflowCount').textContent = outflow;
+              } else {
+                document.getElementById('teleInflowCount').textContent = '0';
+                document.getElementById('teleOutflowCount').textContent = '0';
+              }
 
               const estSpeed = Math.max(18, Math.round(92 - (data.count * 1.1)));
               document.getElementById('teleSpeedValue').textContent = `${estSpeed} km/h`;
@@ -1938,6 +1955,7 @@
     }
 
     function restartVideo() {
+      resetInOutCounters();
       const v = document.getElementById('traffic-video');
       v.currentTime = 0;
       v.play();
