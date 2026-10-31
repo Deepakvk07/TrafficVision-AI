@@ -1986,7 +1986,7 @@ function initializeLeafletMap() {
 
   L.control.zoom({ position: 'bottomright' }).addTo(mapInstance);
 
-  const darkTileUrl = `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${CARTO_API_KEY}`;
+  const darkTileUrl = `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`;
   currentTileLayer = L.tileLayer(darkTileUrl, { maxZoom: 19, subdomains: 'abcd' }).addTo(mapInstance);
 
   // Render all cameras
@@ -2111,9 +2111,9 @@ function refreshAllMarkers() {
 function handleMapLayerChange(style) {
   if (currentTileLayer) mapInstance.removeLayer(currentTileLayer);
   const layers = {
-    dark: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${CARTO_API_KEY}`,
-    voyager: `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${CARTO_API_KEY}`,
-    positron: `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?api_key=${CARTO_API_KEY}`,
+    dark: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+    voyager: `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+    positron: `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
     satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     street: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
   };
