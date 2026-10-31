@@ -1219,7 +1219,7 @@
               <!-- Video & Canvas Elements -->
               <video id="traffic-video" autoplay loop muted playsinline src="188613-883402208.mp4"></video>
               <img id="traffic-live-img" alt="Live CCTV Frame">
-              <iframe id="traffic-iframe" allow="autoplay"></iframe>
+              <iframe id="traffic-iframe" style="display:none;" allow="autoplay"></iframe>
               <canvas id="ai-inference-canvas"></canvas>
 
               <!-- Clean Floating HUD Badges -->
@@ -1528,6 +1528,7 @@
     let isDetecting = false;
     let showAiBoxes = true;
     let showCountingLine = true;
+    let isExternalStream = false;
 
     // Toast helper
     function showToast(message) {
@@ -1634,6 +1635,7 @@
     }
 
     function selectCorridor(corridorId, switchToLab = true) {
+      isExternalStream = false;
       const found = INDIAN_CORRIDORS_DATA.find(c => c.id === corridorId);
       if (!found) return;
 
@@ -1714,7 +1716,7 @@
         const img = document.getElementById('traffic-live-img');
         const iframe = document.getElementById('traffic-iframe');
 
-        if (iframe && iframe.style.display !== 'none') {
+        if (isExternalStream) {
           realYoloDetections = [];
           document.getElementById('hudDetectionPill').className = 'hud-pill status-amber';
           document.getElementById('hudDetectionText').textContent = 'External Stream Active';
@@ -1740,9 +1742,9 @@
 
         try {
           const off = document.createElement('canvas');
-          const scale = Math.min(1.0, 640 / Math.max(mW, mH));
-          off.width = Math.max(320, Math.round(mW * scale));
-          off.height = Math.max(180, Math.round(mH * scale));
+          const scale = Math.min(1.0, 800 / Math.max(mW, mH));
+          off.width = Math.max(480, Math.round(mW * scale));
+          off.height = Math.max(270, Math.round(mH * scale));
           const oCtx = off.getContext('2d');
           oCtx.drawImage(media, 0, 0, off.width, off.height);
 
@@ -1751,7 +1753,7 @@
           const resp = await fetch('/api/detect', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: b64, conf: 0.25 })
+            body: JSON.stringify({ image: b64, conf: 0.15 })
           });
 
           if (resp.ok) {
@@ -1785,40 +1787,37 @@
               detText.textContent = `YOLOv8: ${data.count} VEHICLES DETECTED (${data.inference_ms} ms)`;
             }
 
-            // If user is testing custom uploaded video, synchronize telemetry with genuine detections!
-            const isCustom = document.getElementById('hudCorridorTitle').textContent.includes('Uploaded Video');
-            if (isCustom) {
-              document.getElementById('teleVehicleCount').textContent = data.count;
-              
-              // Congestion
-              const b = document.getElementById('teleCongestionBadge');
-              b.textContent = data.congestion;
-              b.className = 'congestion-badge-pill ' + (
-                data.congestion === 'Free Flow' ? 'congestion-free' :
-                data.congestion === 'Moderate' ? 'congestion-moderate' : 'congestion-heavy'
-              );
-              document.getElementById('teleCongestionBar').style.width = Math.min(100, Math.round((data.count / 40) * 100)) + '%';
+            // Dynamically synchronize live telemetry cards on EVERY detected video frame!
+            document.getElementById('teleVehicleCount').textContent = data.count;
+            
+            // Congestion Tier
+            const b = document.getElementById('teleCongestionBadge');
+            b.textContent = data.congestion;
+            b.className = 'congestion-badge-pill ' + (
+              data.congestion === 'Free Flow' ? 'congestion-free' :
+              data.congestion === 'Moderate' ? 'congestion-moderate' : 'congestion-heavy'
+            );
+            document.getElementById('teleCongestionBar').style.width = Math.min(100, Math.round((data.count / 45) * 100)) + '%';
 
-              // Dynamic Classes
-              const cc = data.class_counts || {};
-              const t = data.count || 1;
-              const cP = Math.round(((cc.car || 0) / t) * 100);
-              const mP = Math.round(((cc.motorcycle || 0) / t) * 100);
-              const bP = Math.round(((cc.bus || 0) / t) * 100);
-              const trP = Math.round(((cc.truck || 0) / t) * 100);
+            // Dynamic Vehicle Classes Breakdown
+            const cc = data.class_counts || {};
+            const t = Math.max(1, data.count);
+            const cP = Math.round(((cc.car || 0) / t) * 100);
+            const mP = Math.round(((cc.motorcycle || 0) / t) * 100);
+            const bP = Math.round(((cc.bus || 0) / t) * 100);
+            const trP = Math.round(((cc.truck || 0) / t) * 100);
 
-              document.getElementById('countCars').textContent = `${cc.car || 0} (${cP}%)`;
-              document.getElementById('barCars').style.width = cP + '%';
+            document.getElementById('countCars').textContent = `${cc.car || 0} (${cP}%)`;
+            document.getElementById('barCars').style.width = cP + '%';
 
-              document.getElementById('countMotos').textContent = `${cc.motorcycle || 0} (${mP}%)`;
-              document.getElementById('barMotos').style.width = mP + '%';
+            document.getElementById('countMotos').textContent = `${cc.motorcycle || 0} (${mP}%)`;
+            document.getElementById('barMotos').style.width = mP + '%';
 
-              document.getElementById('countBuses').textContent = `${cc.bus || 0} (${bP}%)`;
-              document.getElementById('barBuses').style.width = bP + '%';
+            document.getElementById('countBuses').textContent = `${cc.bus || 0} (${bP}%)`;
+            document.getElementById('barBuses').style.width = bP + '%';
 
-              document.getElementById('countTrucks').textContent = `${cc.truck || 0} (${trP}%)`;
-              document.getElementById('barTrucks').style.width = trP + '%';
-            }
+            document.getElementById('countTrucks').textContent = `${cc.truck || 0} (${trP}%)`;
+            document.getElementById('barTrucks').style.width = trP + '%';
           }
         } catch (err) {
           // Continuous stream catch
@@ -1947,16 +1946,20 @@
     }
 
     function loadSampleTrafficVideo() {
+      isExternalStream = false;
       const v = document.getElementById('traffic-video');
       const img = document.getElementById('traffic-live-img');
       const iframe = document.getElementById('traffic-iframe');
 
       if (img) img.style.display = 'none';
-      if (iframe) iframe.style.display = 'none';
+      if (iframe) {
+        iframe.style.display = 'none';
+        iframe.src = '';
+      }
       v.style.display = 'block';
 
       v.src = '188613-883402208.mp4';
-      v.play();
+      v.play().catch(e => console.log('Autoplay handled', e));
 
       document.getElementById('hudCorridorTitle').textContent = 'Sample Indian Traffic (1080p) • NH-48 Corridor';
       document.getElementById('btnSourceSample').classList.add('active');
@@ -1994,17 +1997,21 @@
     }
 
     function playCustomUploadedVideo(file) {
+      isExternalStream = false;
       const v = document.getElementById('traffic-video');
       const img = document.getElementById('traffic-live-img');
       const iframe = document.getElementById('traffic-iframe');
 
       if (img) img.style.display = 'none';
-      if (iframe) iframe.style.display = 'none';
+      if (iframe) {
+        iframe.style.display = 'none';
+        iframe.src = '';
+      }
       v.style.display = 'block';
 
       const fileUrl = URL.createObjectURL(file);
       v.src = fileUrl;
-      v.play();
+      v.play().catch(e => console.log('Autoplay handled', e));
 
       document.getElementById('btnSourceSample').classList.remove('active');
       document.getElementById('hudCorridorTitle').innerHTML = `Uploaded Video &bull; ${file.name}`;
@@ -2041,6 +2048,7 @@
       const iframe = document.getElementById('traffic-iframe');
 
       if (url.includes('youtube.com') || url.includes('youtu.be')) {
+        isExternalStream = true;
         let embed = url;
         if (url.includes('watch?v=')) {
           const vid = url.split('watch?v=')[1].split('&')[0];
@@ -2052,11 +2060,12 @@
         iframe.src = embed;
         document.getElementById('hudCorridorTitle').textContent = 'External YouTube Stream';
       } else {
+        isExternalStream = false;
         iframe.style.display = 'none';
         if (img) img.style.display = 'none';
         v.style.display = 'block';
         v.src = url;
-        v.play();
+        v.play().catch(e => console.log('Autoplay handled', e));
         document.getElementById('hudCorridorTitle').textContent = `Custom Stream: ${url.substring(0, 30)}...`;
       }
 

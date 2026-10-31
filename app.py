@@ -371,8 +371,8 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
 
                 # Run YOLOv8 strictly filtering COCO vehicle classes:
                 # 2: car, 3: motorcycle, 5: bus, 7: truck
-                conf_thresh = float(payload.get('conf', 0.25))
-                res = yolo_model.predict(frame, classes=[2, 3, 5, 7], conf=conf_thresh, verbose=False)
+                conf_thresh = float(payload.get('conf', 0.15))
+                res = yolo_model.predict(frame, classes=[2, 3, 5, 7], conf=conf_thresh, imgsz=640, verbose=False)
                 dt = (time.time() - t0) * 1000
 
                 detections = []
