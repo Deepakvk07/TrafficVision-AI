@@ -1544,10 +1544,10 @@
     <div class="sidebar-search-box">
       <div class="search-input-wrap">
         <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" id="cameraSearchInput" placeholder="Filter camera or highway..." oninput="handleSearch(this.value)">
+        <input type="text" id="cameraSearchInput" placeholder="Search any road, highway, area (Enter)..." oninput="handleSearch(this.value)" onkeydown="if(event.key==='Enter') handleSearchEnter(this.value)">
       </div>
       <button class="btn-deploy-custom" onclick="openDeployModal()">
-        <i class="fa-solid fa-plus-circle"></i> Deploy Camera to Any City
+        <i class="fa-solid fa-location-crosshairs"></i> Search &amp; Add Any Road / Area
       </button>
     </div>
 
@@ -2357,6 +2357,23 @@ function renderCameraSidebarList(searchQuery = '', cityFilter = 'all') {
     container.appendChild(card);
   });
 
+  // If no match found for user search, offer 1-click global geocoding & fly
+  if (matchCount === 0 && searchQuery.trim().length > 0) {
+    const emptyNotice = document.createElement('div');
+    emptyNotice.style.padding = '18px 10px';
+    emptyNotice.style.textAlign = 'center';
+    const cleanQ = searchQuery.replace(/'/g, "\\'");
+    emptyNotice.innerHTML = `
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;line-height:1.4;">
+        No preset camera for "<b>${searchQuery}</b>"
+      </div>
+      <button class="btn-deploy-custom" style="width:100%;padding:10px;font-size:11px;background:rgba(0,245,255,0.14);" onclick="deployAnyRoadOrArea('${cleanQ}')">
+        <i class="fa-solid fa-satellite-dish"></i> Search &amp; Fly to "${searchQuery}"
+      </button>
+    `;
+    container.appendChild(emptyNotice);
+  }
+
   document.getElementById('cameraCountPill').textContent = `${matchCount} / ${HIGHWAY_CAMERAS.length} Active`;
   
   // Aggregate network statistics
@@ -2369,6 +2386,77 @@ function renderCameraSidebarList(searchQuery = '', cityFilter = 'all') {
 
 function handleSearch(val) {
   renderCameraSidebarList(val, document.getElementById('cityFilterSelect').value);
+}
+
+function handleSearchEnter(query) {
+  query = query.trim();
+  if (!query) return;
+
+  // Check if query matches any existing camera
+  const match = HIGHWAY_CAMERAS.find(c => 
+    c.name.toLowerCase().includes(query.toLowerCase()) ||
+    c.road.toLowerCase().includes(query.toLowerCase()) ||
+    c.city.toLowerCase().includes(query.toLowerCase())
+  );
+
+  if (match) {
+    switchActiveCamera(match.id);
+  } else {
+    // Automatically search & fly to any road / area across the globe!
+    deployAnyRoadOrArea(query);
+  }
+}
+
+async function deployAnyRoadOrArea(roadQuery) {
+  if (!roadQuery || !roadQuery.trim()) return;
+  const cleanQuery = roadQuery.trim();
+
+  showToast('info', 'Satellite Lock In Progress', `Acquiring satellite telemetry for "${cleanQuery}"...`);
+
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanQuery)}`);
+    const data = await res.json();
+
+    if (data && data.length > 0) {
+      const targetLat = parseFloat(data[0].lat);
+      const targetLng = parseFloat(data[0].lon);
+      const displayNameParts = data[0].display_name.split(',');
+      const placeName = displayNameParts[0].trim();
+      const cityOrRegion = (displayNameParts[1] || displayNameParts[0]).trim();
+
+      const newId = HIGHWAY_CAMERAS.length + 1;
+      const newCam = {
+        id: newId,
+        name: placeName,
+        city: cityOrRegion,
+        region: 'Custom',
+        road: cleanQuery,
+        lat: targetLat,
+        lng: targetLng,
+        count: Math.floor(Math.random() * 45 + 30),
+        in: 28,
+        out: 20,
+        speed: Math.floor(Math.random() * 35 + 40),
+        lanes: 6,
+        heavy: Math.floor(Math.random() * 6 + 3),
+        status: 'online'
+      };
+
+      HIGHWAY_CAMERAS.push(newCam);
+      addCameraMarker(newCam);
+      switchActiveCamera(newId);
+
+      // High zoom (level 15) to inspect actual road lanes
+      mapInstance.flyTo([targetLat, targetLng], 15, { duration: 1.8 });
+
+      showToast('success', 'Camera Locked on Road!', `Live feed online for "${placeName}" (${targetLat.toFixed(4)}, ${targetLng.toFixed(4)})`);
+    } else {
+      showToast('warn', 'Location Not Found', `Could not find "${cleanQuery}". Try adding the city name, e.g. "${cleanQuery}, Delhi"`);
+    }
+  } catch (err) {
+    console.error('Geocoding error:', err);
+    showToast('error', 'Geocoding Timeout', 'Network error reaching satellite geocoding service.');
+  }
 }
 
 function handleCityFilter(city) {
