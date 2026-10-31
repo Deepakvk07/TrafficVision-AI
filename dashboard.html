@@ -693,6 +693,48 @@
     }
 
     /* Vehicle Class Breakdown List */
+    .category-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .cat-summary-tile {
+      background: rgba(12, 18, 32, 0.75);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 0.6rem 0.5rem;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+
+    .cat-tile-icon {
+      font-size: 0.78rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .cat-tile-val {
+      font-family: var(--font-mono);
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #fff;
+      line-height: 1.1;
+    }
+
+    .cat-tile-sub {
+      font-size: 0.65rem;
+      color: var(--text-subtle);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-top: 0.15rem;
+    }
+
     .breakdown-row-list {
       display: flex;
       flex-direction: column;
@@ -1329,22 +1371,47 @@
             </div>
           </div>
 
-          <!-- Card 2: Vehicle Classification Breakdown (Crucial for Indian Roads!) -->
+          <!-- Card 2: Vehicle Classification Breakdown (Total Detected Per Category) -->
           <div class="tele-card">
             <div class="card-header-row">
-              <span class="card-title"><i class="fa-solid fa-chart-pie"></i> Indian Vehicle Classification</span>
-              <span style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-muted);" id="teleClassSummary">4 Active Classes</span>
+              <span class="card-title"><i class="fa-solid fa-chart-pie"></i> Vehicle Category Totals</span>
+              <span class="india-flag-pill" id="allTimeTotalPill" style="color:var(--primary); border-color:rgba(0,229,255,0.4); background:rgba(0,229,255,0.12)">TOTAL DETECTED: 0</span>
             </div>
 
+            <!-- Prominent Category Total Counter Tiles -->
+            <div class="category-summary-grid">
+              <div class="cat-summary-tile">
+                <div class="cat-tile-icon" style="color:#00e5ff"><i class="fa-solid fa-car"></i> Cars</div>
+                <div class="cat-tile-val" id="tileTotalCars" style="color:#00e5ff">0</div>
+                <div class="cat-tile-sub">Total Detected</div>
+              </div>
+              <div class="cat-summary-tile">
+                <div class="cat-tile-icon" style="color:#ffcc00"><i class="fa-solid fa-motorcycle"></i> Bikes</div>
+                <div class="cat-tile-val" id="tileTotalMotos" style="color:#ffcc00">0</div>
+                <div class="cat-tile-sub">Total Detected</div>
+              </div>
+              <div class="cat-summary-tile">
+                <div class="cat-tile-icon" style="color:#10b981"><i class="fa-solid fa-bus"></i> Buses</div>
+                <div class="cat-tile-val" id="tileTotalBuses" style="color:#10b981">0</div>
+                <div class="cat-tile-sub">Total Detected</div>
+              </div>
+              <div class="cat-summary-tile">
+                <div class="cat-tile-icon" style="color:#f97316"><i class="fa-solid fa-truck"></i> Trucks</div>
+                <div class="cat-tile-val" id="tileTotalTrucks" style="color:#f97316">0</div>
+                <div class="cat-tile-sub">Total Detected</div>
+              </div>
+            </div>
+
+            <!-- Live On-Screen vs Total Detected Breakdown List -->
             <div class="breakdown-row-list">
               <!-- Cars -->
               <div class="breakdown-item">
                 <div class="breakdown-label-row">
                   <span class="breakdown-type"><i class="fa-solid fa-car" style="color:#00e5ff"></i> Cars &amp; Taxis</span>
-                  <span class="breakdown-count" id="countCars">22 (65%)</span>
+                  <span class="breakdown-count" id="countCars">Live: 0 &bull; Total: 0</span>
                 </div>
                 <div class="breakdown-bar-track">
-                  <div class="breakdown-bar-fill" id="barCars" style="width: 65%; background: #00e5ff;"></div>
+                  <div class="breakdown-bar-fill" id="barCars" style="width: 0%; background: #00e5ff;"></div>
                 </div>
               </div>
 
@@ -1352,10 +1419,10 @@
               <div class="breakdown-item">
                 <div class="breakdown-label-row">
                   <span class="breakdown-type"><i class="fa-solid fa-motorcycle" style="color:#ffcc00"></i> Motorcycles / 2-Wheelers</span>
-                  <span class="breakdown-count" id="countMotos" style="color:#ffcc00">6 (18%)</span>
+                  <span class="breakdown-count" id="countMotos" style="color:#ffcc00">Live: 0 &bull; Total: 0</span>
                 </div>
                 <div class="breakdown-bar-track">
-                  <div class="breakdown-bar-fill" id="barMotos" style="width: 18%; background: #ffcc00;"></div>
+                  <div class="breakdown-bar-fill" id="barMotos" style="width: 0%; background: #ffcc00;"></div>
                 </div>
               </div>
 
@@ -1363,10 +1430,10 @@
               <div class="breakdown-item">
                 <div class="breakdown-label-row">
                   <span class="breakdown-type"><i class="fa-solid fa-bus" style="color:#10b981"></i> Buses &amp; Mass Transit</span>
-                  <span class="breakdown-count" id="countBuses" style="color:#10b981">3 (9%)</span>
+                  <span class="breakdown-count" id="countBuses" style="color:#10b981">Live: 0 &bull; Total: 0</span>
                 </div>
                 <div class="breakdown-bar-track">
-                  <div class="breakdown-bar-fill" id="barBuses" style="width: 9%; background: #10b981;"></div>
+                  <div class="breakdown-bar-fill" id="barBuses" style="width: 0%; background: #10b981;"></div>
                 </div>
               </div>
 
@@ -1374,10 +1441,10 @@
               <div class="breakdown-item">
                 <div class="breakdown-label-row">
                   <span class="breakdown-type"><i class="fa-solid fa-truck" style="color:#f97316"></i> Heavy Commercial Trucks</span>
-                  <span class="breakdown-count" id="countTrucks" style="color:#f97316">3 (8%)</span>
+                  <span class="breakdown-count" id="countTrucks" style="color:#f97316">Live: 0 &bull; Total: 0</span>
                 </div>
                 <div class="breakdown-bar-track">
-                  <div class="breakdown-bar-fill" id="barTrucks" style="width: 8%; background: #f97316;"></div>
+                  <div class="breakdown-bar-fill" id="barTrucks" style="width: 0%; background: #f97316;"></div>
                 </div>
               </div>
             </div>
@@ -1562,7 +1629,21 @@
       manualResetActive = true;
       document.getElementById('teleInflowCount').textContent = '0';
       document.getElementById('teleOutflowCount').textContent = '0';
-      showToast('Inflow & Outflow counters reset to 0');
+
+      // Reset category tiles
+      document.getElementById('tileTotalCars').textContent = '0';
+      document.getElementById('tileTotalMotos').textContent = '0';
+      document.getElementById('tileTotalBuses').textContent = '0';
+      document.getElementById('tileTotalTrucks').textContent = '0';
+      document.getElementById('allTimeTotalPill').textContent = 'TOTAL DETECTED: 0';
+
+      document.getElementById('countCars').textContent = 'Live: 0 • Total: 0';
+      document.getElementById('countMotos').textContent = 'Live: 0 • Total: 0';
+      document.getElementById('countBuses').textContent = 'Live: 0 • Total: 0';
+      document.getElementById('countTrucks').textContent = 'Live: 0 • Total: 0';
+
+      fetch('/api/reset-tracking', { method: 'POST' }).catch(() => {});
+      showToast('All vehicle category totals & gate counters reset to 0');
     }
 
     // Toast helper
@@ -1858,24 +1939,34 @@
               document.getElementById('teleCongestionBar').style.width = Math.min(100, Math.round((data.count / 45) * 100)) + '%';
             }
 
-            // Dynamic Vehicle Classes Breakdown
+            // Dynamic Vehicle Classes Breakdown & Total Detected Per Category
             const cc = data.class_counts || {};
+            const cum = data.cumulative_counts || { car: 0, motorcycle: 0, bus: 0, truck: 0 };
+            const totCum = data.total_cumulative || 0;
+
+            // Update Total Detected Per Category Tiles
+            document.getElementById('tileTotalCars').textContent = cum.car || 0;
+            document.getElementById('tileTotalMotos').textContent = cum.motorcycle || 0;
+            document.getElementById('tileTotalBuses').textContent = cum.bus || 0;
+            document.getElementById('tileTotalTrucks').textContent = cum.truck || 0;
+            document.getElementById('allTimeTotalPill').textContent = `TOTAL DETECTED: ${totCum}`;
+
             const t = Math.max(1, data.count);
             const cP = data.count === 0 ? 0 : Math.round(((cc.car || 0) / t) * 100);
             const mP = data.count === 0 ? 0 : Math.round(((cc.motorcycle || 0) / t) * 100);
             const bP = data.count === 0 ? 0 : Math.round(((cc.bus || 0) / t) * 100);
             const trP = data.count === 0 ? 0 : Math.round(((cc.truck || 0) / t) * 100);
 
-            document.getElementById('countCars').textContent = `${cc.car || 0} (${cP}%)`;
+            document.getElementById('countCars').textContent = `Live: ${cc.car || 0} • Total: ${cum.car || 0}`;
             document.getElementById('barCars').style.width = cP + '%';
 
-            document.getElementById('countMotos').textContent = `${cc.motorcycle || 0} (${mP}%)`;
+            document.getElementById('countMotos').textContent = `Live: ${cc.motorcycle || 0} • Total: ${cum.motorcycle || 0}`;
             document.getElementById('barMotos').style.width = mP + '%';
 
-            document.getElementById('countBuses').textContent = `${cc.bus || 0} (${bP}%)`;
+            document.getElementById('countBuses').textContent = `Live: ${cc.bus || 0} • Total: ${cum.bus || 0}`;
             document.getElementById('barBuses').style.width = bP + '%';
 
-            document.getElementById('countTrucks').textContent = `${cc.truck || 0} (${trP}%)`;
+            document.getElementById('countTrucks').textContent = `Live: ${cc.truck || 0} • Total: ${cum.truck || 0}`;
             document.getElementById('barTrucks').style.width = trP + '%';
           }
         } catch (err) {

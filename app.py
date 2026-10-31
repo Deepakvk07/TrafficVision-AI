@@ -31,6 +31,12 @@ print("[*] TRAFFICVISION AI - INDIAN HIGHWAY & URBAN VISION TESTING SERVER")
 print("=" * 70)
 print(f"[*] Loading Ultralytics YOLOv8 Neural Model from: {MODEL_PATH}")
 yolo_model = YOLO(MODEL_PATH)
+# Global Cumulative Vehicle Tracking Session across Video Frames
+SESSION_TRACKER = {
+    'seen_ids': set(),
+    'cumulative': {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
+}
+
 
 # Neural warm-up
 _warmup_frame = np.zeros((360, 640, 3), dtype=np.uint8)
@@ -370,24 +376,39 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                 h, w = frame.shape[:2]
                 t0 = time.time()
 
-                # Run YOLOv8 strictly filtering COCO vehicle classes:
-                # 2: car, 3: motorcycle, 5: bus, 7: truck
+                if payload.get('reset', False):
+                    SESSION_TRACKER['seen_ids'].clear()
+                    SESSION_TRACKER['cumulative'] = {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
+
                 conf_thresh = float(payload.get('conf', 0.15))
-                res = yolo_model.predict(frame, classes=[2, 3, 5, 7], conf=conf_thresh, imgsz=640, verbose=False)
+                
+                # Execute YOLOv8 with ByteTrack persistent tracker
+                res = yolo_model.track(frame, persist=True, tracker='bytetrack.yaml', classes=[2, 3, 5, 7], conf=conf_thresh, imgsz=640, verbose=False)
                 dt = (time.time() - t0) * 1000
 
                 detections = []
                 class_counts = {"car": 0, "motorcycle": 0, "bus": 0, "truck": 0}
+                boxes = res[0].boxes
+                ids_list = boxes.id.tolist() if (boxes and boxes.id is not None) else []
 
-                for idx, box in enumerate(res[0].boxes):
+                for idx, box in enumerate(boxes):
                     xyxy = box.xyxy[0].tolist()
                     conf = float(box.conf[0])
                     cls_id = int(box.cls[0])
                     cls_name = yolo_model.names.get(cls_id, 'vehicle')
+                    track_id = int(ids_list[idx]) if idx < len(ids_list) else idx + 1
+
                     if cls_name in class_counts:
                         class_counts[cls_name] += 1
+
+                    # Cumulative unique vehicle tracking per category
+                    if track_id not in SESSION_TRACKER['seen_ids']:
+                        SESSION_TRACKER['seen_ids'].add(track_id)
+                        if cls_name in SESSION_TRACKER['cumulative']:
+                            SESSION_TRACKER['cumulative'][cls_name] += 1
+
                     detections.append({
-                        'id': idx + 1,
+                        'id': track_id,
                         'box': [round(x, 1) for x in xyxy],
                         'conf': round(conf, 2),
                         'cls': cls_name
@@ -403,10 +424,14 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                 else:
                     congestion = "Severe Congestion"
 
+                total_cum = sum(SESSION_TRACKER['cumulative'].values())
+
                 result_payload = {
                     'detections': detections,
                     'count': count,
                     'class_counts': class_counts,
+                    'cumulative_counts': dict(SESSION_TRACKER['cumulative']),
+                    'total_cumulative': total_cum,
                     'congestion': congestion,
                     'frame_width': w,
                     'frame_height': h,
@@ -425,6 +450,15 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
             # Streams/caches YouTube videos as same-origin MP4
             # enabling full HTML5 Canvas + YOLOv8 real-time AI bounding box detection!
             # -------------------------------------------------------------
+            if parsed_url.path == '/api/reset-tracking':
+                SESSION_TRACKER['seen_ids'].clear()
+                SESSION_TRACKER['cumulative'] = {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'reset', 'cumulative': SESSION_TRACKER['cumulative']}).encode('utf-8'))
+                return
+
             if parsed_url.path == '/api/prepare-youtube':
                 content_len = int(self.headers.get('Content-Length', 0))
                 body_bytes = self.rfile.read(content_len) if content_len > 0 else b'{}'
