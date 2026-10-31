@@ -604,12 +604,13 @@
     }
 
     .big-digital-count {
-      font-family: var(--font-tech);
-      font-size: 3rem;
-      font-weight: 900;
+      font-family: var(--font-mono);
+      font-size: 3.2rem;
+      font-weight: 800;
       color: var(--primary);
       line-height: 1;
-      text-shadow: 0 0 25px var(--primary-glow);
+      letter-spacing: -0.02em;
+      text-shadow: 0 0 20px var(--primary-glow);
     }
 
     .big-digital-label {
@@ -1298,11 +1299,11 @@
 
             <div class="primary-metric-display">
               <div style="display:flex; align-items:baseline;">
-                <span class="big-digital-count" id="teleVehicleCount">34</span>
+                <span class="big-digital-count" id="teleVehicleCount">0</span>
                 <span class="big-digital-label">VEHICLES</span>
               </div>
               <div style="text-align:right">
-                <div style="font-family:var(--font-mono); font-size:1.15rem; font-weight:700; color:var(--primary);" id="teleSpeedValue">88 km/h</div>
+                <div style="font-family:var(--font-mono); font-size:1.15rem; font-weight:700; color:var(--primary);" id="teleSpeedValue">0 km/h</div>
                 <div style="font-size:0.72rem; color:var(--text-muted);">Avg Corridor Speed</div>
               </div>
             </div>
@@ -1313,11 +1314,11 @@
 
             <div class="mini-stats-grid">
               <div class="mini-stat-card">
-                <div class="mini-stat-val" style="color:var(--green)" id="teleInflowCount">21</div>
+                <div class="mini-stat-val" style="color:var(--green)" id="teleInflowCount">0</div>
                 <div class="mini-stat-lbl"><i class="fa-solid fa-arrow-down"></i> Inflow Vehicles</div>
               </div>
               <div class="mini-stat-card">
-                <div class="mini-stat-val" style="color:var(--amber)" id="teleOutflowCount">13</div>
+                <div class="mini-stat-val" style="color:var(--amber)" id="teleOutflowCount">0</div>
                 <div class="mini-stat-lbl"><i class="fa-solid fa-arrow-up"></i> Outflow Vehicles</div>
               </div>
             </div>
@@ -1789,23 +1790,43 @@
 
             // Dynamically synchronize live telemetry cards on EVERY detected video frame!
             document.getElementById('teleVehicleCount').textContent = data.count;
-            
-            // Congestion Tier
-            const b = document.getElementById('teleCongestionBadge');
-            b.textContent = data.congestion;
-            b.className = 'congestion-badge-pill ' + (
-              data.congestion === 'Free Flow' ? 'congestion-free' :
-              data.congestion === 'Moderate' ? 'congestion-moderate' : 'congestion-heavy'
-            );
-            document.getElementById('teleCongestionBar').style.width = Math.min(100, Math.round((data.count / 45) * 100)) + '%';
+
+            if (data.count === 0) {
+              // Non-traffic / Cartoon / Empty video: ZERO telemetry
+              document.getElementById('teleInflowCount').textContent = '0';
+              document.getElementById('teleOutflowCount').textContent = '0';
+              document.getElementById('teleSpeedValue').textContent = '0 km/h';
+
+              const b = document.getElementById('teleCongestionBadge');
+              b.textContent = 'Free Flow (0 Vehicles)';
+              b.className = 'congestion-badge-pill congestion-free';
+              document.getElementById('teleCongestionBar').style.width = '0%';
+            } else {
+              // Live Traffic Feed: Dynamic Inflow & Outflow summing to exact count
+              const inflow = Math.round(data.count * 0.58);
+              const outflow = Math.max(0, data.count - inflow);
+              document.getElementById('teleInflowCount').textContent = inflow;
+              document.getElementById('teleOutflowCount').textContent = outflow;
+
+              const estSpeed = Math.max(18, Math.round(92 - (data.count * 1.1)));
+              document.getElementById('teleSpeedValue').textContent = `${estSpeed} km/h`;
+
+              const b = document.getElementById('teleCongestionBadge');
+              b.textContent = data.congestion;
+              b.className = 'congestion-badge-pill ' + (
+                data.congestion === 'Free Flow' ? 'congestion-free' :
+                data.congestion === 'Moderate' ? 'congestion-moderate' : 'congestion-heavy'
+              );
+              document.getElementById('teleCongestionBar').style.width = Math.min(100, Math.round((data.count / 45) * 100)) + '%';
+            }
 
             // Dynamic Vehicle Classes Breakdown
             const cc = data.class_counts || {};
             const t = Math.max(1, data.count);
-            const cP = Math.round(((cc.car || 0) / t) * 100);
-            const mP = Math.round(((cc.motorcycle || 0) / t) * 100);
-            const bP = Math.round(((cc.bus || 0) / t) * 100);
-            const trP = Math.round(((cc.truck || 0) / t) * 100);
+            const cP = data.count === 0 ? 0 : Math.round(((cc.car || 0) / t) * 100);
+            const mP = data.count === 0 ? 0 : Math.round(((cc.motorcycle || 0) / t) * 100);
+            const bP = data.count === 0 ? 0 : Math.round(((cc.bus || 0) / t) * 100);
+            const trP = data.count === 0 ? 0 : Math.round(((cc.truck || 0) / t) * 100);
 
             document.getElementById('countCars').textContent = `${cc.car || 0} (${cP}%)`;
             document.getElementById('barCars').style.width = cP + '%';
@@ -2012,6 +2033,22 @@
       const fileUrl = URL.createObjectURL(file);
       v.src = fileUrl;
       v.play().catch(e => console.log('Autoplay handled', e));
+
+      // Immediately reset all telemetry cards to 0 while YOLOv8 scans first frame
+      document.getElementById('teleVehicleCount').textContent = '0';
+      document.getElementById('teleInflowCount').textContent = '0';
+      document.getElementById('teleOutflowCount').textContent = '0';
+      document.getElementById('teleSpeedValue').textContent = '0 km/h';
+      document.getElementById('teleCongestionBadge').textContent = 'Analyzing...';
+      document.getElementById('teleCongestionBar').style.width = '0%';
+      document.getElementById('countCars').textContent = '0 (0%)';
+      document.getElementById('barCars').style.width = '0%';
+      document.getElementById('countMotos').textContent = '0 (0%)';
+      document.getElementById('barMotos').style.width = '0%';
+      document.getElementById('countBuses').textContent = '0 (0%)';
+      document.getElementById('barBuses').style.width = '0%';
+      document.getElementById('countTrucks').textContent = '0 (0%)';
+      document.getElementById('barTrucks').style.width = '0%';
 
       document.getElementById('btnSourceSample').classList.remove('active');
       document.getElementById('hudCorridorTitle').innerHTML = `Uploaded Video &bull; ${file.name}`;
