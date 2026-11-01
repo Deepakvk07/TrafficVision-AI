@@ -1689,19 +1689,19 @@
         <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.4rem;">Quick Verified Traffic Streams:</div>
         <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
           <button type="button" class="tool-btn" style="font-size:0.75rem; padding:0.3rem 0.6rem;" onclick="setPresetStream('https://www.youtube.com/watch?v=1EiC9bvVGnk')">
-            <i class="fa-brands fa-youtube" style="color:#ff3333"></i> Live Stream 1
+            <i class="fa-solid fa-satellite-dish" style="color:#00f59b"></i> Live Webcam 1 (Town Square)
           </button>
-          <button type="button" class="tool-btn" style="font-size:0.75rem; padding:0.3rem 0.6rem;" onclick="setPresetStream('https://www.youtube.com/watch?v=6dp-bvQ7RWo')">
-            <i class="fa-brands fa-youtube" style="color:#ff3333"></i> Live Stream 2
+          <button type="button" class="tool-btn" style="font-size:0.75rem; padding:0.3rem 0.6rem;" onclick="setPresetStream('https://www.youtube.com/watch?v=td8hZPA1E4o')">
+            <i class="fa-brands fa-youtube" style="color:#ff3333"></i> Mumbai Traffic (1080p)
           </button>
           <button type="button" class="tool-btn" style="font-size:0.75rem; padding:0.3rem 0.6rem;" onclick="setPresetStream('188613-883402208.mp4')">
-            <i class="fa-solid fa-file-video" style="color:var(--primary)"></i> Local 1080p Traffic
+            <i class="fa-solid fa-file-video" style="color:var(--primary)"></i> Express Highway (1080p)
           </button>
         </div>
       </div>
 
       <div style="font-size:0.72rem; color:var(--text-subtle); margin-bottom:1.25rem; line-height:1.4;">
-        <i class="fa-solid fa-circle-info" style="color:var(--primary)"></i> <strong>Why "refused to connect" happens:</strong> Some YouTube creators turn off "Allow embedding on third-party websites". When embedding is allowed, our engine auto-converts your link into an unblocked player.
+        <i class="fa-solid fa-circle-check" style="color:var(--green)"></i> <strong>Real-Time Vision Stream Proxy:</strong> Both 24/7 live YouTube webcams and recorded videos are proxied directly into our neural inference engine with real-time YOLOv8 vehicle detection and gate counting.
       </div>
 
       <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
@@ -2133,6 +2133,8 @@
           return;
         }
 
+        if (isLiveFeedPaused) return;
+
         let media = null;
         let mW = 640, mH = 360;
 
@@ -2419,9 +2421,25 @@
     /* --------------------------------------------------------------------------
        VIDEO CONTROLS & SOURCES
        -------------------------------------------------------------------------- */
+    let isLiveFeedPaused = false;
+
     function togglePlayPause() {
       const v = document.getElementById('traffic-video');
+      const img = document.getElementById('traffic-live-img');
       const btn = document.getElementById('btnPlayPause');
+
+      if (img && img.style.display !== 'none') {
+        isLiveFeedPaused = !isLiveFeedPaused;
+        if (isLiveFeedPaused) {
+          btn.innerHTML = '<i class="fa-solid fa-play"></i> Resume Feed';
+          showToast('Live stream analysis paused');
+        } else {
+          btn.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
+          showToast('Live stream analysis resumed');
+        }
+        return;
+      }
+
       if (v.paused) {
         v.play();
         btn.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
@@ -2434,8 +2452,16 @@
     function restartVideo() {
       resetAllTelemetryAndTracking(false);
       const v = document.getElementById('traffic-video');
+      const img = document.getElementById('traffic-live-img');
+      if (img && img.style.display !== 'none') {
+        const baseSrc = img.src.split('&t=')[0].split('?t=')[0];
+        img.src = `${baseSrc}&t=${Date.now()}`;
+        showToast('Reconnected live CCTV stream (All counts reset)');
+        return;
+      }
       v.currentTime = 0;
       v.play();
+      showToast('Replaying video from beginning (All counts reset)');
     }
 
     function toggleBoundingBoxes() {
@@ -2586,10 +2612,10 @@
 
       if (ytId) {
         document.getElementById('btnSourceSample').classList.remove('active');
-        document.getElementById('hudCorridorTitle').textContent = `Processing YouTube (${ytId})...`;
+        document.getElementById('hudCorridorTitle').textContent = `Connecting YouTube (${ytId})...`;
         document.getElementById('hudDetectionPill').className = 'hud-pill status-amber';
-        document.getElementById('hudDetectionText').textContent = 'Preparing AI Vision Stream...';
-        showToast(`Extracting YouTube stream (${ytId}) for real-time AI vehicle detection...`);
+        document.getElementById('hudDetectionText').textContent = 'Connecting Neural Stream...';
+        showToast(`Connecting YouTube feed (${ytId}) for real-time AI vehicle detection...`);
 
         try {
           const prepResp = await fetch('/api/prepare-youtube', {
@@ -2602,65 +2628,89 @@
             const prepData = await prepResp.json();
             if (prepData.video_url) {
               isExternalStream = false;
-              iframe.style.display = 'none';
-              iframe.src = '';
-              if (img) img.style.display = 'none';
-
               resetAllTelemetryAndTracking(false);
-              v.style.display = 'block';
-              v.src = prepData.video_url;
-              v.currentTime = 0;
-              v.play().catch(e => console.log('Autoplay handled', e));
 
-              document.getElementById('hudCorridorTitle').textContent = `YouTube &bull; ${prepData.title || ytId}`;
-              safeSetText('specCorridorName', prepData.title || ytId);
-              safeSetText('specRoute', 'YouTube Video Stream (AI Tracking Active)');
-              safeSetText('specRegionTag', 'YOUTUBE');
-              showToast('YouTube stream ready! Real-time YOLOv8 neural detection active.');
-              return;
+              if (prepData.is_live) {
+                // Live Stream -> Render via high-performance same-origin MJPEG <img>
+                v.pause();
+                v.style.display = 'none';
+                if (iframe) {
+                  iframe.style.display = 'none';
+                  iframe.src = '';
+                }
+
+                img.style.display = 'block';
+                img.crossOrigin = 'anonymous';
+                img.src = `${prepData.video_url}&t=${Date.now()}`;
+
+                document.getElementById('hudCorridorTitle').innerHTML = `<span class="pulse-green-beacon" style="display:inline-block; margin-right:4px;"></span> Live CCTV &bull; ${prepData.title || ytId}`;
+                document.getElementById('hudDetectionPill').className = 'hud-pill status-green';
+                document.getElementById('hudDetectionText').textContent = 'YOLOv8: Tracking Live Traffic Stream...';
+                safeSetText('specCorridorName', prepData.title || ytId);
+                safeSetText('specRoute', 'YouTube Live CCTV (Real-Time AI Tracking Active)');
+                safeSetText('specRegionTag', 'LIVE CCTV');
+                showToast('Live CCTV stream connected! Real-time YOLOv8 vehicle detection active.');
+                return;
+              } else {
+                // Regular Video -> Play in <video> container
+                if (img) img.style.display = 'none';
+                if (iframe) {
+                  iframe.style.display = 'none';
+                  iframe.src = '';
+                }
+
+                v.style.display = 'block';
+                v.src = prepData.video_url;
+                v.currentTime = 0;
+                v.play().catch(e => console.log('Autoplay handled', e));
+
+                document.getElementById('hudCorridorTitle').textContent = `YouTube &bull; ${prepData.title || ytId}`;
+                document.getElementById('hudDetectionPill').className = 'hud-pill status-green';
+                document.getElementById('hudDetectionText').textContent = 'YOLOv8: Tracking Traffic...';
+                safeSetText('specCorridorName', prepData.title || ytId);
+                safeSetText('specRoute', 'YouTube Video Stream (AI Tracking Active)');
+                safeSetText('specRegionTag', 'YOUTUBE');
+                showToast('YouTube stream ready! Real-time YOLOv8 neural detection active.');
+                return;
+              }
             }
           }
         } catch (err) {
-          console.warn('Backend YouTube extraction failed, using iframe', err);
+          console.warn('Backend YouTube extraction failed', err);
         }
 
-        // Fallback to iframe if download failed
-        isExternalStream = true;
-        v.pause();
-        v.style.display = 'none';
-        if (img) img.style.display = 'none';
-
-        const embedUrl = `https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&mute=1&controls=1&rel=0&playsinline=1&enablejsapi=1`;
-        iframe.src = embedUrl;
-        iframe.style.display = 'block';
-
-        document.getElementById('hudCorridorTitle').textContent = `YouTube Stream (${ytId})`;
-        document.getElementById('hudDetectionPill').className = 'hud-pill status-amber';
-        document.getElementById('hudDetectionText').textContent = 'External YouTube Stream Active';
-        showToast(`Connected YouTube Stream: ID ${ytId}`);
+        // Clean user notification if stream completely unavailable
+        showToast('Unable to extract stream for this video. Please select a verified live camera or public traffic video.');
       } else if (url.match(/\.(jpeg|jpg|png|webp)($|\?)/i)) {
         isExternalStream = false;
+        resetAllTelemetryAndTracking(false);
         v.pause();
         v.style.display = 'none';
-        iframe.style.display = 'none';
-        iframe.src = '';
+        if (iframe) {
+          iframe.style.display = 'none';
+          iframe.src = '';
+        }
         if (img) {
           img.style.display = 'block';
+          img.crossOrigin = 'anonymous';
           img.src = url;
         }
         document.getElementById('hudCorridorTitle').textContent = `IP Camera: ${url.substring(0, 30)}...`;
-        showToast('Connected IP Camera Snapshot');
+        showToast('Connected IP Camera Snapshot (All counts reset)');
       } else {
         // Direct MP4 / WebM stream
         isExternalStream = false;
-        iframe.style.display = 'none';
-        iframe.src = '';
+        resetAllTelemetryAndTracking(false);
+        if (iframe) {
+          iframe.style.display = 'none';
+          iframe.src = '';
+        }
         if (img) img.style.display = 'none';
         v.style.display = 'block';
         v.src = url;
         v.play().catch(e => console.log('Autoplay handled', e));
         document.getElementById('hudCorridorTitle').textContent = `Custom Video Stream: ${url.substring(0, 30)}...`;
-        showToast('Connected Custom Video Feed');
+        showToast('Connected Custom Video Feed (All counts reset)');
       }
     }
 

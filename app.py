@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import base64
+import threading
 import numpy as np
 import cv2
 from ultralytics import YOLO
@@ -52,6 +53,119 @@ def reset_session_tracker():
     SESSION_TRACKER['outflow_ids'].clear()
     SESSION_TRACKER['gate_crossed_in'].clear()
     SESSION_TRACKER['gate_crossed_out'].clear()
+
+
+# --------------------------------------------------------------------------
+# High-Performance Multi-Threaded Live Stream Manager (HLS / MJPEG)
+# Proxies live YouTube webcams & RTSP/HLS feeds for zero-CORS canvas access
+# --------------------------------------------------------------------------
+class LiveStreamManager:
+    def __init__(self):
+        self.streams = {}
+        self.lock = threading.Lock()
+
+    def get_or_create_stream(self, vid, stream_url=None):
+        with self.lock:
+            if vid in self.streams:
+                s = self.streams[vid]
+                s['last_access'] = time.time()
+                return s
+
+            if not stream_url:
+                stream_url = self._extract_stream_url(vid)
+
+            if not stream_url:
+                return None
+
+            s = {
+                'vid': vid,
+                'url': stream_url,
+                'cap': None,
+                'last_frame': None,
+                'last_access': time.time(),
+                'running': True,
+                'lock': threading.Lock()
+            }
+            self.streams[vid] = s
+            t = threading.Thread(target=self._worker, args=(vid,), daemon=True)
+            s['thread'] = t
+            t.start()
+            return s
+
+    def _extract_stream_url(self, vid):
+        try:
+            import yt_dlp
+            ydl_opts = {'quiet': True, 'skip_download': True, 'no_warnings': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f'https://www.youtube.com/watch?v={vid}', download=False)
+                formats = info.get('formats', [])
+                for f in formats:
+                    h = f.get('height') or 0
+                    if f.get('vcodec') != 'none' and ('m3u8' in f.get('url', '') or f.get('ext') == 'mp4'):
+                        if 360 <= h <= 720:
+                            return f.get('url')
+                for f in formats:
+                    if f.get('vcodec') != 'none' and ('m3u8' in f.get('url', '') or f.get('ext') == 'mp4'):
+                        return f.get('url')
+        except Exception as e:
+            print(f"[!] Error extracting live stream URL for {vid}: {e}")
+        return None
+
+    def _worker(self, vid):
+        stream = self.streams.get(vid)
+        if not stream:
+            return
+        url = stream['url']
+        cap = cv2.VideoCapture(url)
+        stream['cap'] = cap
+        print(f"[*] Live stream capture thread started for video ID: {vid}")
+
+        fail_count = 0
+        while stream['running']:
+            if time.time() - stream['last_access'] > 45:
+                print(f"[*] Live stream {vid} idle timeout (worker shutting down).")
+                break
+
+            ret, frame = cap.read()
+            if not ret or frame is None or frame.size == 0:
+                fail_count += 1
+                if fail_count > 30:
+                    cap.release()
+                    time.sleep(1.0)
+                    cap = cv2.VideoCapture(url)
+                    fail_count = 0
+                time.sleep(0.04)
+                continue
+
+            fail_count = 0
+            h, w = frame.shape[:2]
+            if w > 720:
+                scale = 720.0 / w
+                frame = cv2.resize(frame, (720, int(h * scale)))
+
+            ret_enc, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 72])
+            if ret_enc:
+                with stream['lock']:
+                    stream['last_frame'] = jpeg.tobytes()
+
+            time.sleep(0.04)
+
+        cap.release()
+        with self.lock:
+            if vid in self.streams and self.streams[vid] is stream:
+                del self.streams[vid]
+
+    def get_frame(self, vid):
+        stream = self.streams.get(vid)
+        if not stream:
+            stream = self.get_or_create_stream(vid)
+        if stream:
+            stream['last_access'] = time.time()
+            with stream['lock']:
+                return stream.get('last_frame')
+        return None
+
+live_stream_manager = LiveStreamManager()
 
 
 # Neural warm-up
@@ -560,35 +674,92 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                 os.makedirs(cache_dir, exist_ok=True)
                 out_file = os.path.join(cache_dir, f'{vid}.mp4')
 
+                # 1. First inspect the URL to determine if it is a live stream or static video
+                try:
+                    import yt_dlp
+                    ydl_info_opts = {'quiet': True, 'skip_download': True, 'no_warnings': True}
+                    with yt_dlp.YoutubeDL(ydl_info_opts) as ydl:
+                        info = ydl.extract_info(f'https://www.youtube.com/watch?v={vid}', download=False)
+                        is_live = bool(info.get('is_live') or info.get('live_status') in ['is_live', 'is_upcoming'])
+                        title = info.get('title', f'YouTube Stream ({vid})')
+                except Exception as e:
+                    if os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            'status': 'ready',
+                            'is_live': False,
+                            'video_url': f'/youtube_cache/{vid}.mp4',
+                            'video_id': vid,
+                            'title': f'YouTube Stream ({vid})'
+                        }).encode('utf-8'))
+                        return
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'error': str(e), 'video_id': vid}).encode('utf-8'))
+                    return
+
+                # 2. If it is a LIVE STREAM -> Return live stream proxy feed URL!
+                if is_live:
+                    stream_url = None
+                    formats = info.get('formats', [])
+                    for f in formats:
+                        h = f.get('height') or 0
+                        if f.get('vcodec') != 'none' and ('m3u8' in f.get('url', '') or f.get('ext') == 'mp4'):
+                            if 360 <= h <= 720:
+                                stream_url = f.get('url')
+                                break
+                    if not stream_url:
+                        for f in formats:
+                            if f.get('vcodec') != 'none' and ('m3u8' in f.get('url', '') or f.get('ext') == 'mp4'):
+                                stream_url = f.get('url')
+                                break
+                    live_stream_manager.get_or_create_stream(vid, stream_url=stream_url)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        'status': 'ready',
+                        'is_live': True,
+                        'stream_type': 'mjpeg',
+                        'video_url': f'/api/live-stream-feed?vid={vid}',
+                        'video_id': vid,
+                        'title': title
+                    }).encode('utf-8'))
+                    return
+
+                # 3. If it is a REGULAR VIDEO -> Check cache or download MP4 (no ffmpeg required)
                 if os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
                     self.wfile.write(json.dumps({
                         'status': 'ready',
+                        'is_live': False,
                         'video_url': f'/youtube_cache/{vid}.mp4',
                         'video_id': vid,
-                        'title': f'YouTube Stream ({vid})'
+                        'title': title
                     }).encode('utf-8'))
                     return
 
                 try:
-                    import yt_dlp
-                    ydl_opts = {
-                        'format': '134/135/136/133/bestvideo[ext=mp4]/best',
+                    ydl_dl_opts = {
+                        'format': '136/135/134/133/160/bestvideo[ext=mp4]/best',
                         'outtmpl': out_file,
                         'quiet': True,
                         'no_warnings': True
                     }
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(f'https://www.youtube.com/watch?v={vid}', download=True)
-                        title = info.get('title', f'YouTube Stream ({vid})')
+                    with yt_dlp.YoutubeDL(ydl_dl_opts) as ydl:
+                        ydl.download([f'https://www.youtube.com/watch?v={vid}'])
 
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
                     self.wfile.write(json.dumps({
                         'status': 'ready',
+                        'is_live': False,
                         'video_url': f'/youtube_cache/{vid}.mp4',
                         'video_id': vid,
                         'title': title
@@ -619,6 +790,82 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
             parsed_url = urllib.parse.urlparse(self.path)
             path = parsed_url.path
             query_params = urllib.parse.parse_qs(parsed_url.query)
+
+            # -------------------------------------------------------------
+            # Endpoints: /api/live-stream-feed & /api/live-frame
+            # High-performance MJPEG live webcam streaming with full Canvas draw access
+            # -------------------------------------------------------------
+            if path == '/api/live-stream-feed':
+                vid = query_params.get('vid', [''])[0].strip()
+                if not vid:
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "Missing vid parameter"}')
+                    return
+
+                stream = live_stream_manager.get_or_create_stream(vid)
+                if not stream:
+                    self.send_response(502)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "Unable to connect to live stream"}')
+                    return
+
+                self.send_response(200)
+                self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
+                self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                self.send_header('Pragma', 'no-cache')
+                self.send_header('Expires', '0')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+
+                last_sent = None
+                try:
+                    while True:
+                        frame_bytes = live_stream_manager.get_frame(vid)
+                        if frame_bytes and frame_bytes != last_sent:
+                            last_sent = frame_bytes
+                            chunk = (
+                                b'--frame\r\n'
+                                b'Content-Type: image/jpeg\r\n'
+                                b'Content-Length: ' + str(len(frame_bytes)).encode('utf-8') + b'\r\n\r\n' +
+                                frame_bytes + b'\r\n'
+                            )
+                            self.wfile.write(chunk)
+                            self.wfile.flush()
+                        time.sleep(0.04)
+                except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+                    pass
+                return
+
+            if path == '/api/live-frame':
+                vid = query_params.get('vid', [''])[0].strip()
+                if not vid:
+                    self.send_response(400)
+                    self.end_headers()
+                    return
+
+                frame_bytes = live_stream_manager.get_frame(vid)
+                if not frame_bytes:
+                    for _ in range(25):
+                        time.sleep(0.1)
+                        frame_bytes = live_stream_manager.get_frame(vid)
+                        if frame_bytes:
+                            break
+
+                if frame_bytes:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'image/jpeg')
+                    self.send_header('Content-Length', str(len(frame_bytes)))
+                    self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(frame_bytes)
+                else:
+                    self.send_response(503)
+                    self.end_headers()
+                return
 
             # -------------------------------------------------------------
             # Endpoint: /api/indian-corridors
