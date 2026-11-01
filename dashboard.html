@@ -2259,7 +2259,7 @@
           const resp = await fetch('/api/detect', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: b64, conf: 0.15, gate_y: gateYRatio })
+            body: JSON.stringify({ image: b64, conf: 0.15, gate_y: gateYRatio, gate_enabled: showCountingLine })
           });
 
           if (resp.ok) {

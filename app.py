@@ -32,27 +32,166 @@ print("[*] TRAFFICVISION AI - INDIAN HIGHWAY & URBAN VISION TESTING SERVER")
 print("=" * 70)
 print(f"[*] Loading Ultralytics YOLOv8 Neural Model from: {MODEL_PATH}")
 yolo_model = YOLO(MODEL_PATH)
-# Global Cumulative Vehicle Tracking Session across Video Frames
-SESSION_TRACKER = {
-    'seen_ids': set(),
-    'cumulative': {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0},
-    'prev_positions': {},      # track_id -> (cx, cy)
-    'start_positions': {},     # track_id -> (cx, cy)
-    'inflow_ids': set(),       # track_ids classified as Inflow
-    'outflow_ids': set(),      # track_ids classified as Outflow
-    'gate_crossed_in': set(),  # track_ids that crossed gate down
-    'gate_crossed_out': set(), # track_ids that crossed gate up
-}
+# --------------------------------------------------------------------------
+# Spatial Anti-Flicker Vehicle Tracker with Accurate Single-Pass Gate Counting
+# Prevents duplicate counting from ByteTrack ID flickering on sampled frames
+# --------------------------------------------------------------------------
+class SpatialVehicleTracker:
+    def __init__(self):
+        self.tracks = {}  # id -> track dict
+        self.next_id = 1
+        self.max_lost_time = 3.5  # Maintain track across occlusions up to 3.5s
+        self.cumulative = {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
+        self.counted_ids = set()
+
+    def reset(self):
+        self.tracks.clear()
+        self.next_id = 1
+        self.cumulative = {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
+        self.counted_ids.clear()
+
+    @staticmethod
+    def iou(boxA, boxB):
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+        interArea = max(0, xB - xA) * max(0, yB - yA)
+        boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
+        boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
+        denom = boxAArea + boxBArea - interArea
+        return interArea / denom if denom > 0 else 0
+
+    def update(self, raw_detections, gate_y_px, gate_enabled=True):
+        now = time.time()
+        # Clean up tracks that vanished longer than max_lost_time
+        stale_ids = [tid for tid, trk in self.tracks.items() if now - trk['last_seen'] > self.max_lost_time]
+        for tid in stale_ids:
+            del self.tracks[tid]
+
+        matched_tracks = set()
+        matched_dets = set()
+        active_ids = list(self.tracks.keys())
+
+        # Pass 1: Bounding Box IoU matching (robust to small shifts)
+        for d_idx, det in enumerate(raw_detections):
+            best_iou = 0.0
+            best_tid = None
+            for tid in active_ids:
+                if tid in matched_tracks:
+                    continue
+                trk = self.tracks[tid]
+                if trk['cls'] == det['cls'] or {trk['cls'], det['cls']}.issubset({'car', 'truck', 'bus', 'vehicle'}):
+                    score = self.iou(det['box'], trk['box'])
+                    if score > best_iou:
+                        best_iou = score
+                        best_tid = tid
+
+            if best_iou > 0.18 and best_tid is not None:
+                matched_tracks.add(best_tid)
+                matched_dets.add(d_idx)
+                trk = self.tracks[best_tid]
+                trk['prev_cy'] = trk['cy']
+                trk['prev_cx'] = trk['cx']
+                trk['box'] = det['box']
+                trk['cx'] = (det['box'][0] + det['box'][2]) / 2.0
+                trk['cy'] = (det['box'][1] + det['box'][3]) / 2.0
+                trk['last_seen'] = now
+                trk['frames_seen'] += 1
+                det['assigned_id'] = best_tid
+
+        # Pass 2: Centroid Proximity matching (handles fast movement across 120ms gaps)
+        for d_idx, det in enumerate(raw_detections):
+            if d_idx in matched_dets:
+                continue
+            cx = (det['box'][0] + det['box'][2]) / 2.0
+            cy = (det['box'][1] + det['box'][3]) / 2.0
+            best_dist = 999999.0
+            best_tid = None
+
+            for tid in active_ids:
+                if tid in matched_tracks:
+                    continue
+                trk = self.tracks[tid]
+                if trk['cls'] == det['cls'] or {trk['cls'], det['cls']}.issubset({'car', 'truck', 'bus', 'vehicle'}):
+                    dist = ((cx - trk['cx'])**2 + (cy - trk['cy'])**2) ** 0.5
+                    bw = det['box'][2] - det['box'][0]
+                    bh = det['box'][3] - det['box'][1]
+                    max_allowed_dist = max(80.0, max(bw, bh) * 1.8)
+                    if dist < max_allowed_dist and dist < best_dist:
+                        best_dist = dist
+                        best_tid = tid
+
+            if best_tid is not None:
+                matched_tracks.add(best_tid)
+                matched_dets.add(d_idx)
+                trk = self.tracks[best_tid]
+                trk['prev_cy'] = trk['cy']
+                trk['prev_cx'] = trk['cx']
+                trk['box'] = det['box']
+                trk['cx'] = cx
+                trk['cy'] = cy
+                trk['last_seen'] = now
+                trk['frames_seen'] += 1
+                det['assigned_id'] = best_tid
+
+        # Pass 3: Truly new vehicle entering scene
+        for d_idx, det in enumerate(raw_detections):
+            if d_idx in matched_dets:
+                continue
+            new_id = self.next_id
+            self.next_id += 1
+            cx = (det['box'][0] + det['box'][2]) / 2.0
+            cy = (det['box'][1] + det['box'][3]) / 2.0
+            self.tracks[new_id] = {
+                'id': new_id,
+                'cls': det['cls'],
+                'box': det['box'],
+                'cx': cx,
+                'cy': cy,
+                'prev_cx': cx,
+                'prev_cy': cy,
+                'last_seen': now,
+                'frames_seen': 1,
+                'counted': False
+            }
+            det['assigned_id'] = new_id
+
+        # Pass 4: Gate Crossing & Strict Single-Pass Counting
+        for d_idx, det in enumerate(raw_detections):
+            tid = det['assigned_id']
+            trk = self.tracks[tid]
+            cls_name = trk['cls']
+
+            if not trk['counted']:
+                should_count = False
+                prev_y = trk['prev_cy']
+                curr_y = trk['cy']
+
+                if gate_enabled and gate_y_px > 0:
+                    # Vehicle centroid crossed the virtual counting gate
+                    if (prev_y < gate_y_px and curr_y >= gate_y_px) or (prev_y > gate_y_px and curr_y <= gate_y_px):
+                        should_count = True
+                    # Near gate line and confirmed for >= 2 frames
+                    elif abs(curr_y - gate_y_px) <= 22 and trk['frames_seen'] >= 2:
+                        should_count = True
+                else:
+                    # Gate disabled: count confirmed vehicle seen for >= 2 frames
+                    if trk['frames_seen'] >= 2:
+                        should_count = True
+
+                if should_count and tid not in self.counted_ids:
+                    trk['counted'] = True
+                    self.counted_ids.add(tid)
+                    if cls_name in self.cumulative:
+                        self.cumulative[cls_name] += 1
+
+        return raw_detections
+
+spatial_tracker = SpatialVehicleTracker()
 
 def reset_session_tracker():
-    SESSION_TRACKER['seen_ids'].clear()
-    SESSION_TRACKER['cumulative'] = {'car': 0, 'motorcycle': 0, 'bus': 0, 'truck': 0}
-    SESSION_TRACKER['prev_positions'].clear()
-    SESSION_TRACKER['start_positions'].clear()
-    SESSION_TRACKER['inflow_ids'].clear()
-    SESSION_TRACKER['outflow_ids'].clear()
-    SESSION_TRACKER['gate_crossed_in'].clear()
-    SESSION_TRACKER['gate_crossed_out'].clear()
+    spatial_tracker.reset()
 
 
 # --------------------------------------------------------------------------
@@ -510,97 +649,42 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                     reset_session_tracker()
 
                 conf_thresh = float(payload.get('conf', 0.15))
-                
-                # Execute YOLOv8 with ByteTrack persistent tracker
-                res = yolo_model.track(frame, persist=True, tracker='bytetrack.yaml', classes=[2, 3, 5, 7], conf=conf_thresh, imgsz=640, verbose=False)
-                dt = (time.time() - t0) * 1000
-
-                detections = []
-                class_counts = {"car": 0, "motorcycle": 0, "bus": 0, "truck": 0}
-                boxes = res[0].boxes
-                ids_list = boxes.id.tolist() if (boxes and boxes.id is not None) else []
-
                 gate_ratio = float(payload.get('gate_y', 0.45))
                 gate_line_y = h * gate_ratio
+                gate_enabled = bool(payload.get('gate_enabled', True))
 
-                for idx, box in enumerate(boxes):
+                # Execute Ultralytics YOLOv8 detection
+                res = yolo_model.predict(frame, classes=[2, 3, 5, 7], conf=conf_thresh, imgsz=640, verbose=False)
+                dt = (time.time() - t0) * 1000
+
+                raw_detections = []
+                boxes = res[0].boxes
+                for box in boxes:
                     xyxy = box.xyxy[0].tolist()
                     conf = float(box.conf[0])
                     cls_id = int(box.cls[0])
                     cls_name = yolo_model.names.get(cls_id, 'vehicle')
-                    track_id = int(ids_list[idx]) if idx < len(ids_list) else idx + 1
-
-                    if cls_name in class_counts:
-                        class_counts[cls_name] += 1
-
-                    # Cumulative unique vehicle tracking per category
-                    if track_id not in SESSION_TRACKER['seen_ids']:
-                        SESSION_TRACKER['seen_ids'].add(track_id)
-                        if cls_name in SESSION_TRACKER['cumulative']:
-                            SESSION_TRACKER['cumulative'][cls_name] += 1
-
-                    curr_x = (xyxy[0] + xyxy[2]) / 2.0
-                    curr_y = (xyxy[1] + xyxy[3]) / 2.0
-
-                    if track_id not in SESSION_TRACKER['start_positions']:
-                        SESSION_TRACKER['start_positions'][track_id] = (curr_x, curr_y)
-
-                    # Physical gate line crossing check
-                    if track_id in SESSION_TRACKER['prev_positions']:
-                        prev_x, prev_y = SESSION_TRACKER['prev_positions'][track_id]
-                        if prev_y < gate_line_y and curr_y >= gate_line_y:
-                            SESSION_TRACKER['gate_crossed_in'].add(track_id)
-                            SESSION_TRACKER['inflow_ids'].add(track_id)
-                            SESSION_TRACKER['outflow_ids'].discard(track_id)
-                        elif prev_y > gate_line_y and curr_y <= gate_line_y:
-                            SESSION_TRACKER['gate_crossed_out'].add(track_id)
-                            SESSION_TRACKER['outflow_ids'].add(track_id)
-                            SESSION_TRACKER['inflow_ids'].discard(track_id)
-
-                    # Trajectory direction classification if not crossed gate
-                    if track_id not in SESSION_TRACKER['gate_crossed_in'] and track_id not in SESSION_TRACKER['gate_crossed_out']:
-                        start_x, start_y = SESSION_TRACKER['start_positions'][track_id]
-                        net_dy = curr_y - start_y
-                        if net_dy > 1.2:
-                            SESSION_TRACKER['inflow_ids'].add(track_id)
-                            SESSION_TRACKER['outflow_ids'].discard(track_id)
-                        elif net_dy < -1.2:
-                            SESSION_TRACKER['outflow_ids'].add(track_id)
-                            SESSION_TRACKER['inflow_ids'].discard(track_id)
-                        else:
-                            if curr_y >= gate_line_y:
-                                SESSION_TRACKER['inflow_ids'].add(track_id)
-                            else:
-                                SESSION_TRACKER['outflow_ids'].add(track_id)
-
-                    SESSION_TRACKER['prev_positions'][track_id] = (curr_x, curr_y)
-
-                    detections.append({
-                        'id': track_id,
-                        'box': [round(x, 1) for x in xyxy],
-                        'conf': round(conf, 2),
+                    raw_detections.append({
+                        'box': xyxy,
+                        'conf': conf,
                         'cls': cls_name
                     })
 
-                # Ensure every single seen ID is attributed to Inflow or Outflow
-                for tid in SESSION_TRACKER['seen_ids']:
-                    if tid not in SESSION_TRACKER['inflow_ids'] and tid not in SESSION_TRACKER['outflow_ids']:
-                        if tid in SESSION_TRACKER['start_positions'] and SESSION_TRACKER['start_positions'][tid][1] >= gate_line_y:
-                            SESSION_TRACKER['inflow_ids'].add(tid)
-                        else:
-                            SESSION_TRACKER['outflow_ids'].add(tid)
+                # Run Spatial Anti-Flicker Vehicle Tracker & Accurate Gate Counting
+                tracked_detections = spatial_tracker.update(raw_detections, gate_line_y, gate_enabled=gate_enabled)
 
-                total_cum = sum(SESSION_TRACKER['cumulative'].values())
-                in_count = len(SESSION_TRACKER['inflow_ids'])
-                out_count = len(SESSION_TRACKER['outflow_ids'])
-
-                if total_cum > 0 and (in_count + out_count) != total_cum:
-                    ratio = in_count / max(1, (in_count + out_count))
-                    in_count = int(round(total_cum * ratio))
-                    out_count = total_cum - in_count
-
-                gate_in = len(SESSION_TRACKER['gate_crossed_in'])
-                gate_out = len(SESSION_TRACKER['gate_crossed_out'])
+                class_counts = {"car": 0, "motorcycle": 0, "bus": 0, "truck": 0}
+                detections = []
+                for det in tracked_detections:
+                    cls_name = det['cls']
+                    if cls_name in class_counts:
+                        class_counts[cls_name] += 1
+                    detections.append({
+                        'id': det['assigned_id'],
+                        'box': [round(x, 1) for x in det['box']],
+                        'conf': round(det['conf'], 2),
+                        'cls': cls_name
+                    })
 
                 count = len(detections)
                 if count <= 10:
@@ -612,18 +696,15 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                 else:
                     congestion = "Severe Congestion"
 
-                total_cum = sum(SESSION_TRACKER['cumulative'].values())
+                cum = dict(spatial_tracker.cumulative)
+                total_cum = sum(cum.values())
 
                 result_payload = {
                     'detections': detections,
                     'count': count,
                     'class_counts': class_counts,
-                    'cumulative_counts': dict(SESSION_TRACKER['cumulative']),
+                    'cumulative_counts': cum,
                     'total_cumulative': total_cum,
-                    'in_count': in_count,
-                    'out_count': out_count,
-                    'gate_in': gate_in,
-                    'gate_out': gate_out,
                     'congestion': congestion,
                     'frame_width': w,
                     'frame_height': h,
@@ -647,7 +728,11 @@ class TacticalHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({'status': 'reset', 'in_count': 0, 'out_count': 0, 'gate_in': 0, 'gate_out': 0, 'cumulative': SESSION_TRACKER['cumulative']}).encode('utf-8'))
+                self.wfile.write(json.dumps({
+                    'status': 'reset',
+                    'cumulative': dict(spatial_tracker.cumulative),
+                    'total_cumulative': sum(spatial_tracker.cumulative.values())
+                }).encode('utf-8'))
                 return
 
             if parsed_url.path == '/api/prepare-youtube':
