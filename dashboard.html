@@ -1529,21 +1529,9 @@
               <div class="congestion-bar-fill" id="teleCongestionBar" style="width: 55%;"></div>
             </div>
 
-            <div class="mini-stats-grid">
-              <div class="mini-stat-card">
-                <div class="mini-stat-val" style="color:var(--green)" id="teleInflowCount">0</div>
-                <div class="mini-stat-lbl"><i class="fa-solid fa-arrow-down"></i> Inflow Vehicles</div>
-                <div style="font-size:0.68rem; color:var(--text-muted); margin-top:0.25rem;">Gate Crossings: <span id="teleGateInCount" style="color:var(--text-secondary); font-weight:700;">0</span></div>
-              </div>
-              <div class="mini-stat-card">
-                <div class="mini-stat-val" style="color:var(--amber)" id="teleOutflowCount">0</div>
-                <div class="mini-stat-lbl"><i class="fa-solid fa-arrow-up"></i> Outflow Vehicles</div>
-                <div style="font-size:0.68rem; color:var(--text-muted); margin-top:0.25rem;">Gate Crossings: <span id="teleGateOutCount" style="color:var(--text-secondary); font-weight:700;">0</span></div>
-              </div>
-            </div>
-            <div style="margin-top:0.6rem; display:flex; justify-content:flex-end;">
-              <button class="tool-btn" style="padding:0.3rem 0.75rem; font-size:0.75rem;" onclick="resetInOutCounters()">
-                <i class="fa-solid fa-rotate-left"></i> Reset In/Out Counters
+            <div style="margin-top:0.85rem; display:flex; justify-content:flex-end;">
+              <button class="tool-btn" style="padding:0.35rem 0.85rem; font-size:0.75rem;" onclick="resetAllTelemetryAndTracking(true)">
+                <i class="fa-solid fa-rotate-left"></i> Reset All Counters
               </button>
             </div>
           </div>
@@ -1796,10 +1784,6 @@
 
       // 3. Reset Live Telemetry UI values
       safeSetText('teleVehicleCount', '0');
-      safeSetText('teleInflowCount', '0');
-      safeSetText('teleOutflowCount', '0');
-      safeSetText('teleGateInCount', '0');
-      safeSetText('teleGateOutCount', '0');
       safeSetText('teleSpeedValue', '0 km/h');
 
       const b = document.getElementById('teleCongestionBadge');
@@ -2204,10 +2188,6 @@
 
             if (data.count === 0) {
               // Non-traffic / Cartoon / Empty video: ZERO telemetry
-              safeSetText('teleInflowCount', '0');
-              safeSetText('teleOutflowCount', '0');
-              safeSetText('teleGateInCount', '0');
-              safeSetText('teleGateOutCount', '0');
               safeSetText('teleSpeedValue', '0 km/h');
 
               const b = document.getElementById('teleCongestionBadge');
@@ -2259,10 +2239,7 @@
                 outCount = data.out_count;
               }
 
-              safeSetText('teleInflowCount', inCount);
-              safeSetText('teleOutflowCount', outCount);
-              safeSetText('teleGateInCount', data.gate_in || 0);
-              safeSetText('teleGateOutCount', data.gate_out || 0);
+
 
               const estSpeed = Math.max(18, Math.round(92 - (data.count * 1.1)));
               document.getElementById('teleSpeedValue').textContent = `${estSpeed} km/h`;
@@ -2361,15 +2338,7 @@
           ctx.fillStyle = isDraggingGate ? '#000000' : gateColor;
           ctx.fillText(handleText, 21, Math.max(13, gateY - 9));
 
-          // Direction hints
-          ctx.font = 'bold 9px JetBrains Mono';
-          ctx.fillStyle = '#00e5ff';
-          ctx.fillText('↓ INFLOW (Incoming Flow)', 16, Math.min(canvas.height - 8, gateY + 14));
 
-          ctx.fillStyle = '#f97316';
-          const outText = '↑ OUTFLOW (Outgoing Flow)';
-          const outW = ctx.measureText(outText).width;
-          ctx.fillText(outText, Math.max(16, canvas.width - outW - 16), Math.max(11, gateY - 9));
         }
 
         // 2. Draw Genuine YOLOv8 Detections (Only if vehicles actually exist!)
